@@ -1,0 +1,5 @@
+{
+  "name": "PROMPTHEUS Dashboard",
+  "description": "A sophisticated LLM red-teaming dashboard for configuring attacks, monitoring live probes, and analyzing judge verdicts.",
+  "requestFramePermissions": []
+}

@@ -1,0 +1,10 @@
+openai
+pydantic
+typer
+rich
+streamlit
+slack_sdk
+slack_bolt
+python-dotenv
+requests
+pytest

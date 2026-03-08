@@ -1,0 +1,63 @@
+{
+  "session_id": "b06ca4c8-7368-4861-a19e-eea59fe4108b",
+  "target": "dummy",
+  "objective": "sanity check",
+  "attempts": [
+    {
+      "attempt": {
+        "skill": "json_leak",
+        "objective": "sanity check",
+        "payload": "offline-payload",
+        "target_response": "(offline dummy) offline-payload"
+      },
+      "verdict": {
+        "is_vulnerable": false,
+        "reason": "offline",
+        "severity": "low"
+      },
+      "timestamp": "2026-03-07T18:41:52.301611Z"
+    },
+    {
+      "attempt": {
+        "skill": "json_leak",
+        "objective": "sanity check",
+        "payload": "offline-payload",
+        "target_response": "(offline dummy) offline-payload"
+      },
+      "verdict": {
+        "is_vulnerable": false,
+        "reason": "offline",
+        "severity": "low"
+      },
+      "timestamp": "2026-03-07T18:41:52.302304Z"
+    },
+    {
+      "attempt": {
+        "skill": "json_leak",
+        "objective": "sanity check",
+        "payload": "offline-payload",
+        "target_response": "(offline dummy) offline-payload"
+      },
+      "verdict": {
+        "is_vulnerable": false,
+        "reason": "offline",
+        "severity": "low"
+      },
+      "timestamp": "2026-03-07T18:41:52.302394Z"
+    },
+    {
+      "attempt": {
+        "skill": "json_leak",
+        "objective": "sanity check",
+        "payload": "offline-payload",
+        "target_response": "(offline dummy) offline-payload"
+      },
+      "verdict": {
+        "is_vulnerable": false,
+        "reason": "offline",
+        "severity": "low"
+      },
+      "timestamp": "2026-03-07T18:41:52.302447Z"
+    }
+  ]
+}
