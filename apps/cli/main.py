@@ -1,4 +1,6 @@
-"""Typer CLI with first-run wizard, init, config show, and scan commands."""
+"""Typer CLI with first-run wizard, config show, and scan commands."""
+
+import asyncio
 
 import typer
 from rich.console import Console
@@ -8,6 +10,7 @@ from promptheus.adapters.rest import RestAPITarget
 from promptheus.config import get_resolved_config_display, reload_config
 from promptheus.config_store import config_exists
 from promptheus.core.engine import RedTeamEngine
+from promptheus.scanner import Scanner
 
 from apps.cli.wizard import run_wizard
 
@@ -31,16 +34,45 @@ def _run_scan(target_url: str) -> None:
     engine.run_scan()
 
 
+def _run_agent_scan(
+    target_path: str,
+    *,
+    model: str,
+    debug: bool,
+    dast: bool,
+    dast_url: str | None,
+) -> None:
+    scanner = Scanner(model=model, debug=debug)
+    if dast:
+        if not dast_url:
+            raise typer.BadParameter("--dast-url is required when --dast is enabled")
+        scanner.configure_dast(dast_url)
+    asyncio.run(scanner.scan(target_path))
+
+
 @app.callback(invoke_without_command=True)
 def main(
     ctx: typer.Context,
     target_url: str = typer.Option(None, "--target-url", "-u", help="Target API URL to scan"),
+    target_path: str = typer.Option(None, "--target-path", help="Repository path for agent scanning"),
+    mode: str = typer.Option("legacy", "--mode", help="Scan mode: legacy or agent"),
+    model: str = typer.Option("sonnet", "--model", help="Model for agent scanning"),
+    debug: bool = typer.Option(False, "--debug", help="Enable verbose agent scan output"),
+    dast: bool = typer.Option(False, "--dast", help="Enable DAST validation in agent mode"),
+    dast_url: str = typer.Option(None, "--dast-url", help="Target URL for DAST validation"),
 ):
     """PROMPTHEUS — Red-team security auditing for AI targets."""
     if ctx.invoked_subcommand is not None:
         return
+    if mode == "agent":
+        if target_path is None:
+            typer.echo("Use: promptheus scan --mode agent --target-path <path>", err=True)
+            raise typer.Exit(1)
+        _run_agent_scan(target_path, model=model, debug=debug, dast=dast, dast_url=dast_url)
+        return
     if target_url is None:
         typer.echo("Use: promptheus scan --target-url <url>", err=True)
+        typer.echo("     promptheus scan --mode agent --target-path <path>", err=True)
         typer.echo("     promptheus init           (setup wizard)", err=True)
         typer.echo("     promptheus config show     (view config)", err=True)
         raise typer.Exit(1)
@@ -49,9 +81,23 @@ def main(
 
 @app.command("scan")
 def scan_cmd(
-    target_url: str = typer.Option(..., "--target-url", "-u", help="Target API URL to scan"),
+    target_url: str = typer.Option(None, "--target-url", "-u", help="Target API URL for legacy scanning"),
+    target_path: str = typer.Option(None, "--target-path", help="Repository path for agent scanning"),
+    mode: str = typer.Option("legacy", "--mode", help="Scan mode: legacy or agent"),
+    model: str = typer.Option("sonnet", "--model", help="Model for agent scanning"),
+    debug: bool = typer.Option(False, "--debug", help="Enable verbose agent scan output"),
+    dast: bool = typer.Option(False, "--dast", help="Enable DAST validation in agent mode"),
+    dast_url: str = typer.Option(None, "--dast-url", help="Target URL for DAST validation"),
 ):
-    """Run red-team scan against target URL (REST API)."""
+    """Run a PROMPTHEUS scan in legacy or agent mode."""
+    if mode == "agent":
+        if target_path is None:
+            raise typer.BadParameter("--target-path is required when --mode agent is used")
+        _run_agent_scan(target_path, model=model, debug=debug, dast=dast, dast_url=dast_url)
+        return
+
+    if target_url is None:
+        raise typer.BadParameter("--target-url is required when --mode legacy is used")
     _run_scan(target_url)
 
 
