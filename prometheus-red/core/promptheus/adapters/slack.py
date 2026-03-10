@@ -3,62 +3,74 @@ from __future__ import annotations
 import time
 from typing import Optional
 
-from slack_sdk import WebClient
-from slack_sdk.errors import SlackApiError
+from slack_sdk.web.client import WebClient
 
 from promptheus.adapters.base import TargetAdapter
 
 
 class SlackAdapter(TargetAdapter):
-    """Slack adapter that posts to a channel and waits for a thread reply."""
+    """Post prompt to channel/thread and read the next reply from target bot."""
 
     def __init__(
         self,
-        bot_token: str,
-        channel: str,
-        target_bot_user: Optional[str] = None,
+        client: WebClient,
+        channel_id: str,
+        thread_ts: str,
+        target_bot_user_id: Optional[str] = None,
+        *,
         poll_interval: float = 2.0,
-        max_polls: int = 5,
+        poll_timeout: float = 60.0,
     ):
-        self.client = WebClient(token=bot_token)
-        self.channel = channel
-        self.target_bot_user = target_bot_user
-        self.poll_interval = poll_interval
-        self.max_polls = max_polls
-        self.name = f"slack:{channel}"
+        self._client = client
+        self._channel_id = channel_id
+        self._thread_ts = thread_ts
+        self._target_bot_user_id = target_bot_user_id
+        self._poll_interval = poll_interval
+        self._poll_timeout = poll_timeout
+        self.name = f"slack:{channel_id}:{thread_ts}"
 
     def send_message(self, payload: str) -> str:
-        try:
-            post_resp = self.client.chat_postMessage(channel=self.channel, text=payload)
-        except SlackApiError as exc:  # pragma: no cover - network failure path
-            raise RuntimeError(f"Slack post failed: {exc.response['error']}") from exc
+        # Mention target bot if provided.
+        if self._target_bot_user_id:
+            text = f"<@{self._target_bot_user_id}> {payload}"
+        else:
+            text = payload
 
-        thread_ts = post_resp.get("ts")
-        if not thread_ts:
-            return "(no thread timestamp returned)"
+        resp = self._client.chat_postMessage(
+            channel=self._channel_id,
+            thread_ts=self._thread_ts,
+            text=text,
+        )
+        if not resp.get("ok"):
+            return f"[Slack error: failed to post: {resp.get('error', 'unknown')}]"
+        our_ts = resp.get("ts", "")
 
-        for _ in range(self.max_polls):
-            time.sleep(self.poll_interval)
-            try:
-                replies = self.client.conversations_replies(channel=self.channel, ts=thread_ts)
-            except SlackApiError:
+        deadline = time.monotonic() + self._poll_timeout
+        while time.monotonic() < deadline:
+            replies_resp = self._client.conversations_replies(
+                channel=self._channel_id,
+                ts=self._thread_ts,
+                limit=200,
+            )
+            if not replies_resp.get("ok"):
+                time.sleep(self._poll_interval)
                 continue
-
-            messages = replies.get("messages", [])
-            responses = [
-                m for m in messages
-                if m.get("ts") != thread_ts
-                and (
-                    self.target_bot_user is None
-                    or m.get("user") == self.target_bot_user
-                    or m.get("bot_id") == self.target_bot_user
-                )
-            ]
-            if responses:
-                msg = responses[0]
-                text = msg.get("text") or ""
-                if not text and "blocks" in msg:
-                    text = str(msg["blocks"])
-                return text
-
-        return "(no reply received)"
+            messages = replies_resp.get("messages") or []
+            for msg in messages:
+                msg_ts = msg.get("ts", "")
+                if msg_ts <= our_ts:
+                    continue
+                if self._target_bot_user_id:
+                    user = msg.get("user") or msg.get("bot_id")
+                    bot_profile = msg.get("bot_profile") or {}
+                    if not (
+                        user == self._target_bot_user_id
+                        or msg.get("bot_id") == self._target_bot_user_id
+                        or bot_profile.get("id") == self._target_bot_user_id
+                        or bot_profile.get("bot_id") == self._target_bot_user_id
+                    ):
+                        continue
+                if msg.get("subtype") == "bot_message" or msg.get("user") or msg.get("bot_id"):
+                    return (msg.get("text") or "").strip() or "[empty reply]"
+            time.sleep(self._poll_interval)
+        return "[Slack adapter: timeout waiting for target reply]"

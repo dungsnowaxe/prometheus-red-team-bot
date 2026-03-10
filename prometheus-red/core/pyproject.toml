@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "prometheus-red"
+version = "0.1.0"
+description = "PROMPTHEUS red-team CLI for LLM targets"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "PROMPTHEUS contributors" }]
+dependencies = [
+  "openai",
+  "pydantic",
+  "typer",
+  "rich",
+  "streamlit",
+  "slack_sdk",
+  "slack_bolt",
+  "python-dotenv",
+  "requests",
+  "pytest"
+]
+
+[project.scripts]
+prometheus-red = "promptheus.interfaces.cli:app"

@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from promptheus.core.engine import run_attack
+from promptheus.core.attack_runner import run_attack
 from promptheus.core.judge import Judge
 
 

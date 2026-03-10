@@ -1,11 +1,17 @@
 from __future__ import annotations
 
 import argparse
-import os
 import types
 
-from promptheus.core.engine import run_attack
+from dotenv import load_dotenv, find_dotenv
+from openai import OpenAI
+
+from promptheus.core.attack_runner import run_attack
 from promptheus.core.judge import Judge
+from promptheus.config import get_attacker_api_key, get_attacker_base_url, get_attacker_model
+
+# Auto-load .env from current working directory if present.
+load_dotenv(find_dotenv(usecwd=True))
 
 
 class DummyAdapter:
@@ -41,9 +47,20 @@ def main():
     parser.add_argument("--offline", action="store_true", help="Use offline stub clients (no OpenAI calls)")
     args = parser.parse_args()
 
-    use_offline = args.offline or not os.getenv("OPENAI_API_KEY")
+    attacker_api_key = get_attacker_api_key()
+    attacker_base_url = get_attacker_base_url()
+    attacker_model = get_attacker_model()
+    use_offline = args.offline or not (attacker_api_key or attacker_base_url)
 
-    attack_client = OfflineClient("offline-payload") if use_offline else None
+    if use_offline:
+        attack_client = OfflineClient("offline-payload")
+    else:
+        kwargs = {}
+        if attacker_api_key:
+            kwargs["api_key"] = attacker_api_key
+        if attacker_base_url:
+            kwargs["base_url"] = attacker_base_url
+        attack_client = OpenAI(**kwargs)
     judge_client = OfflineClient('{"is_vulnerable": false, "reason": "offline", "severity": "low"}') if use_offline else None
 
     adapter = DummyAdapter()
@@ -55,6 +72,7 @@ def main():
         judge=judge,
         max_attempts=1,
         client=attack_client,
+        model=attacker_model,
     )
     print(session.to_json())
 

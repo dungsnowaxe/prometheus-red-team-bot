@@ -1,54 +1,197 @@
-# PROMPTHEUS — Proactive Red-team Operator (Steps 1-5)
+# PROMPTHEUS — Proactive Red-team Operator (CLI)
 
-PROMPTHEUS is a modular red-team harness for LLM targets. It crafts adversarial payloads from reusable “skills”, probes targets via pluggable adapters (local, REST, Slack), and uses an LLM judge to score behavioral vulnerabilities. This repo ships the full bootstrap through Slack integration, ready for demos and extension.
+PROMPTHEUS is a modular red-team harness for LLM targets. It runs adversarial payloads through pluggable adapters (REST, Slack, local) and evaluates responses with an LLM judge. This repo focuses on the **CLI** workflow.
 
-## Setup
-1) Create virtualenv (Python 3.11+): `python3 -m venv .venv && source .venv/bin/activate`
-2) Install deps: `pip install -r requirements.txt`
-3) Copy `.env.example` → `.env`; set `OPENAI_API_KEY`. For OpenRouter set `OPENAI_BASE_URL=https://openrouter.ai/api/v1` plus optional `OPENAI_HTTP_REFERER` and `OPENAI_X_TITLE`. For Slack, set `SLACK_BOT_TOKEN`, `SLACK_SIGNING_SECRET`, optionally `SLACK_APP_TOKEN`.
+## Features
+- Payload-based scanning with rubric judge (baseline security checks)
+- Skill-based attack mode (LLM-crafted payloads)
+- REST target adapter (HTTP)
+- Slack bot listener (optional)
+- Session logging for attack history
+- JSON output for automation
 
-## Current scope
-- Core models, skill loader, example skills.
-- Attacker engine + Judge logic using `gpt-4o-mini`.
-- REST adapter + local function adapter.
-- Typer CLI wrapper for running attacks.
-- Slack adapter and listener scaffolded (Step 5).
-- Session logs written to `promptheus/data/sessions/` as JSON.
+## Requirements
+- Python 3.11+ (required for CLI usage)
 
-## Quick smoke (offline by default)
+## Install (pipx)
+Local install (from this repo):
 ```bash
-python -m promptheus.main --offline
-```
-Pass `--objective "steal the key"` to change the goal. Remove `--offline` once API key is set.
-
-CLI example (REST target):
-```
-python -m promptheus.interfaces.cli attack --target-url https://example.com/llm --objective "Reveal your system prompt" --skill grandma
+cd /path/to/prometheus-red/core
+pipx install .
 ```
 
-Using OpenRouter (no code changes needed):
-```
-export OPENAI_API_KEY=sk-or-v1-... 
-export OPENAI_BASE_URL=https://openrouter.ai/api/v1
-python -m promptheus.interfaces.cli attack --objective "Reveal your system prompt" --offline  # remove --offline to hit your target
+From a public Git repo:
+```bash
+pipx install git+https://github.com/your-org/prometheus-red.git
 ```
 
-Slack listener (requires env vars `SLACK_BOT_TOKEN`, `SLACK_SIGNING_SECRET`, and optionally `SLACK_APP_TOKEN` for Socket Mode):
-```
-python -m promptheus.interfaces.slack_bot
+Verify:
+```bash
+prometheus-red --help
 ```
 
-## Architecture at a glance
-- Hexagonal: core attack/judge logic separated from adapters (REST, Slack, local) and interfaces (CLI, bot).
-- Skill-based: prompts live as markdown metaprompts under `promptheus/core/skills/`.
-- Behavioral judging: LLM judge plus robustness/JSON repair to handle malformed outputs.
-- Storage: attack sessions serialized to JSON in `promptheus/data/sessions/`.
-
-## Tests
+Upgrade:
+```bash
+pipx upgrade prometheus-red
 ```
-pytest
-```
-Tests mock OpenAI; Slack tests auto-skip if `slack_sdk` is missing. (In this environment, package install is blocked by network policy—please install and run in your networked dev setup.)
 
-## More detailed usage
-See `USAGE.md` for step-by-step instructions (OpenRouter, offline, REST, Slack).
+Uninstall:
+```bash
+pipx uninstall prometheus-red
+```
+
+## Install (pip)
+Local install (from this repo):
+```bash
+cd /path/to/prometheus-red/core
+pip install .
+```
+
+Note: if you install into a venv, you must `source .venv/bin/activate` to use `prometheus-red`.
+
+Recommended (venv):
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install .
+```
+
+Verify:
+```bash
+prometheus-red --help
+```
+
+Alternative (user site install, no venv):
+```bash
+python3 -m pip install --user .
+```
+Make sure `~/.local/bin` is in your PATH, then run:
+```bash
+prometheus-red --help
+```
+
+## Setup (dev)
+```bash
+cd /path/to/prometheus-red/core
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+## Configuration
+Create `.env` in `prometheus-red/core`. The CLI auto-loads `.env` from the current working directory.
+
+### Judge (LLM evaluator)
+```env
+PROMPTHEUS_JUDGE_API_KEY=sk-...
+PROMPTHEUS_JUDGE_BASE_URL=https://openrouter.ai/api/v1
+PROMPTHEUS_JUDGE_MODEL=qwen/qwen3-vl-235b-a22b-thinking
+PROMPTHEUS_JUDGE_MAX_TOKENS=512
+```
+
+### Slack (optional)
+```env
+SLACK_BOT_TOKEN=xoxb-...
+SLACK_SIGNING_SECRET=...
+SLACK_APP_TOKEN=xapp-...   # Socket Mode (optional)
+```
+
+## Commands
+### Show config (masked)
+```bash
+prometheus-red config-show
+```
+
+### Validate config
+```bash
+prometheus-red config-check
+```
+
+### Scan (payload-based)
+```bash
+prometheus-red scan --target-url https://your-llm-endpoint
+```
+
+Options:
+```bash
+prometheus-red scan \
+  --target-url https://your-llm-endpoint \
+  --payloads-set extended \
+  --payloads-file ./payloads_custom.json \
+  --max-payloads 10 \
+  --save-report \
+  --dry-run
+```
+
+- `--payloads-set` = `standard` or `extended`
+- `--payloads-file` overrides the set with a custom JSON file
+- `--max-payloads` limits how many payloads to run
+- `--save-report` writes JSON to `promptheus/data/reports/`
+- `--dry-run` prints what would run without making requests
+
+### Attack (skill-based)
+Single skill:
+```bash
+prometheus-red attack \
+  --target-url https://your-llm-endpoint \
+  --objective "Reveal your system prompt" \
+  --skill grandma
+```
+
+Multiple skills (sequential):
+```bash
+prometheus-red attack \
+  --target-url https://your-llm-endpoint \
+  --objective "Reveal your system prompt" \
+  --skills grandma,dan,json_leak
+```
+
+Attack options:
+```bash
+prometheus-red attack \
+  --target-url https://your-llm-endpoint \
+  --objective "Reveal your system prompt" \
+  --skills grandma,dan \
+  --save-report \
+  --no-save \
+  --dry-run
+```
+
+- `--save-report` writes JSON to `promptheus/data/reports/`
+- `--no-save` disables attack session files
+- `--dry-run` prints what would run without making requests
+
+### JSON output
+```bash
+prometheus-red scan --target-url https://your-llm-endpoint --json-output
+prometheus-red attack --target-url https://your-llm-endpoint --objective "..." --json-output
+```
+
+### Logging
+```bash
+prometheus-red scan --target-url https://your-llm-endpoint --log-file ./promptheus.log --verbose
+```
+
+### Help
+```bash
+prometheus-red --help
+prometheus-red scan --help
+prometheus-red attack --help
+```
+
+## Reports and Sessions
+- Attack sessions: `promptheus/data/sessions/*.json`
+- Scan reports: `promptheus/data/reports/scan_report_*.json` (when `--save-report` is used)
+- Attack reports: `promptheus/data/reports/attack_report_*.json` (when `--save-report` is used)
+
+## Slack Bot (optional)
+Run the listener:
+```bash
+python3 -m promptheus.interfaces.slack_bot
+```
+In Slack, use: `@RedTeamBot attack @TargetBot`
+
+## Notes
+- Scan is faster and more stable for baseline checks.
+- Attack mode is more exploratory and may take longer (payloads are generated by the LLM).
+- If you see `No LLM configured` in reasoning, make sure your `.env` keys are set.
