@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 from typing import Optional
@@ -26,6 +27,18 @@ def _get_int(name: str, default: int) -> int:
         return default
     try:
         value = int(raw)
+    except ValueError:
+        return default
+    return value if value > 0 else default
+
+
+def _get_float(name: str, default: Optional[float]) -> Optional[float]:
+    """Read a positive float env var; None or invalid => default."""
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    try:
+        value = float(raw)
     except ValueError:
         return default
     return value if value > 0 else default
@@ -56,6 +69,22 @@ def get_judge_api_key() -> Optional[str]:
 
 def get_judge_model() -> str:
     return os.getenv("PROMPTHEUS_JUDGE_MODEL") or _stored().get("model") or "gpt-4o-mini"
+
+
+def get_judge_max_response_chars() -> Optional[int]:
+    """
+    Max target response length (chars) before truncation. When set, responses longer
+    than this are truncated and \"[truncated]\" is appended. None or 0 = no truncation.
+    Env: PROMPTHEUS_JUDGE_MAX_RESPONSE_CHARS (default: None).
+    """
+    raw = os.getenv("PROMPTHEUS_JUDGE_MAX_RESPONSE_CHARS") or _stored().get("judge_max_response_chars")
+    if raw is None:
+        return None
+    try:
+        value = int(raw)
+    except ValueError:
+        return None
+    return value if value > 0 else None
 
 
 def get_slack_bot_token() -> Optional[str]:
@@ -195,6 +224,62 @@ class RuntimeConfig:
             "PROMPTHEUS_PR_TIMEOUT_SECONDS",
             self.DEFAULTS["pr_review_timeout_seconds"],
         )
+
+    def get_max_scan_cost_usd(self) -> Optional[float]:
+        """Optional max scan cost in USD; when set, scanner checks after run. Env: PROMPTHEUS_MAX_SCAN_COST_USD."""
+        return _get_float("PROMPTHEUS_MAX_SCAN_COST_USD", None)
+
+    def get_max_scan_files(self) -> Optional[int]:
+        """Optional max repository file count; when exceeded requires --confirm-large-scan. Env: PROMPTHEUS_MAX_SCAN_FILES."""
+        raw = os.getenv("PROMPTHEUS_MAX_SCAN_FILES")
+        if raw is None:
+            return None
+        try:
+            value = int(raw)
+        except ValueError:
+            return None
+        return value if value > 0 else None
+
+    def get_fix_remediation_enabled(self) -> bool:
+        """Whether to run the fix-remediation agent after report (and DAST). Env: PROMPTHEUS_FIX_REMEDIATION_ENABLED (default: false)."""
+        raw = os.getenv("PROMPTHEUS_FIX_REMEDIATION_ENABLED", "").strip().lower()
+        return raw in ("1", "true", "yes")
+
+    def get_dast_skills_dirs(self) -> list[Path]:
+        """Additional DAST skill directories (besides package default). Env: PROMPTHEUS_DAST_SKILLS_DIRS (comma-separated paths)."""
+        raw = os.getenv("PROMPTHEUS_DAST_SKILLS_DIRS", "").strip()
+        if raw:
+            return [Path(p.strip()).resolve() for p in raw.split(",") if p.strip()]
+        stored = _stored().get("dast_skills_dirs")
+        if isinstance(stored, list):
+            return [Path(p).resolve() if isinstance(p, str) else Path(str(p)).resolve() for p in stored]
+        return []
+
+    def get_dast_cwe_skill_overrides(self) -> dict[str, str]:
+        """Optional CWE ID -> skill name overrides for DAST. Env: PROMPTHEUS_DAST_CWE_SKILL_OVERRIDES (JSON object)."""
+        raw = os.getenv("PROMPTHEUS_DAST_CWE_SKILL_OVERRIDES", "").strip()
+        if raw:
+            try:
+                data = json.loads(raw)
+                if isinstance(data, dict):
+                    return {str(k): str(v) for k, v in data.items()}
+            except (json.JSONDecodeError, TypeError):
+                pass
+        stored = _stored().get("dast_cwe_skill_overrides")
+        if isinstance(stored, dict):
+            return {str(k): str(v) for k, v in stored.items()}
+        return {}
+
+    def get_max_repo_mb(self) -> Optional[int]:
+        """Optional max repository size in MB; when exceeded requires --confirm-large-scan. Env: PROMPTHEUS_MAX_REPO_MB."""
+        raw = os.getenv("PROMPTHEUS_MAX_REPO_MB")
+        if raw is None:
+            return None
+        try:
+            value = int(raw)
+        except ValueError:
+            return None
+        return value if value > 0 else None
 
 
 config = RuntimeConfig()

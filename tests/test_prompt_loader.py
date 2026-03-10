@@ -63,7 +63,7 @@ class TestLoadAllAgentPrompts:
     def test_loads_all_agents(self):
         prompts = load_all_agent_prompts()
         assert isinstance(prompts, dict)
-        expected = {"assessment", "threat_modeling", "code_review", "pr_code_review", "report_generator", "dast"}
+        expected = {"assessment", "threat_modeling", "code_review", "pr_code_review", "report_generator", "dast", "fix_remediation"}
         assert set(prompts.keys()) == expected
 
     def test_all_prompts_nonempty(self):

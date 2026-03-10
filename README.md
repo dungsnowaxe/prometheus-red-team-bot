@@ -179,6 +179,7 @@ Each payload has `id`, `name`, `prompt`, and `judge_expectation` (rubric for the
 
 ## References
 
+- [Scanner configuration](docs/scanner_config.md) — Cost limits, threat-aware scanning, design decisions, fix-remediation, artifact trust (for codebase security scans).
 - PyRIT (Microsoft) — Adapter-style "Targets".
 - Promptfoo — LLM rubric / scoring.
 - Slack Bolt (Python) — Bot framework; we intentionally allow bot_message and use a loop breaker.

@@ -11,6 +11,7 @@ from promptheus.config import get_resolved_config_display, reload_config
 from promptheus.config_store import config_exists
 from promptheus.core.engine import RedTeamEngine
 from promptheus.scanner import Scanner
+from promptheus.scanner.scanner import _EstimateCostExit
 
 from apps.cli.wizard import run_wizard
 
@@ -41,13 +42,23 @@ def _run_agent_scan(
     debug: bool,
     dast: bool,
     dast_url: str | None,
+    confirm_large_scan: bool = False,
+    estimate_cost: bool = False,
 ) -> None:
-    scanner = Scanner(model=model, debug=debug)
+    scanner = Scanner(
+        model=model,
+        debug=debug,
+        confirm_large_scan=confirm_large_scan,
+        estimate_cost_only=estimate_cost,
+    )
     if dast:
         if not dast_url:
             raise typer.BadParameter("--dast-url is required when --dast is enabled")
         scanner.configure_dast(dast_url)
-    asyncio.run(scanner.scan(target_path))
+    try:
+        asyncio.run(scanner.scan(target_path))
+    except _EstimateCostExit:
+        raise typer.Exit(0)
 
 
 @app.callback(invoke_without_command=True)
@@ -60,6 +71,12 @@ def main(
     debug: bool = typer.Option(False, "--debug", help="Enable verbose agent scan output"),
     dast: bool = typer.Option(False, "--dast", help="Enable DAST validation in agent mode"),
     dast_url: str = typer.Option(None, "--dast-url", help="Target URL for DAST validation"),
+    confirm_large_scan: bool = typer.Option(
+        False, "--confirm-large-scan", help="Proceed even when repo exceeds PROMPTHEUS_MAX_SCAN_FILES / MAX_REPO_MB"
+    ),
+    estimate_cost: bool = typer.Option(
+        False, "--estimate-cost", help="Print rough cost estimate for agent scan and exit (no API call)"
+    ),
 ):
     """PROMPTHEUS — Red-team security auditing for AI targets."""
     if ctx.invoked_subcommand is not None:
@@ -68,7 +85,15 @@ def main(
         if target_path is None:
             typer.echo("Use: promptheus scan --mode agent --target-path <path>", err=True)
             raise typer.Exit(1)
-        _run_agent_scan(target_path, model=model, debug=debug, dast=dast, dast_url=dast_url)
+        _run_agent_scan(
+            target_path,
+            model=model,
+            debug=debug,
+            dast=dast,
+            dast_url=dast_url,
+            confirm_large_scan=ctx.params.get("confirm_large_scan", False),
+            estimate_cost=ctx.params.get("estimate_cost", False),
+        )
         return
     if target_url is None:
         typer.echo("Use: promptheus scan --target-url <url>", err=True)
@@ -88,12 +113,24 @@ def scan_cmd(
     debug: bool = typer.Option(False, "--debug", help="Enable verbose agent scan output"),
     dast: bool = typer.Option(False, "--dast", help="Enable DAST validation in agent mode"),
     dast_url: str = typer.Option(None, "--dast-url", help="Target URL for DAST validation"),
+    confirm_large_scan: bool = typer.Option(
+        False, "--confirm-large-scan", help="Proceed when repo exceeds file/size limits"
+    ),
+    estimate_cost: bool = typer.Option(False, "--estimate-cost", help="Print cost estimate and exit (agent mode)"),
 ):
     """Run a PROMPTHEUS scan in legacy or agent mode."""
     if mode == "agent":
         if target_path is None:
             raise typer.BadParameter("--target-path is required when --mode agent is used")
-        _run_agent_scan(target_path, model=model, debug=debug, dast=dast, dast_url=dast_url)
+        _run_agent_scan(
+            target_path,
+            model=model,
+            debug=debug,
+            dast=dast,
+            dast_url=dast_url,
+            confirm_large_scan=confirm_large_scan,
+            estimate_cost=estimate_cost,
+        )
         return
 
     if target_url is None:

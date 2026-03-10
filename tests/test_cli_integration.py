@@ -54,7 +54,14 @@ class TestCLIScanAgentMode:
             total_cost_usd: float
 
         class FakeScanner:
-            def __init__(self, model: str = "sonnet", debug: bool = False):
+            def __init__(
+                self,
+                model: str = "sonnet",
+                debug: bool = False,
+                confirm_large_scan: bool = False,
+                estimate_cost_only: bool = False,
+                **kwargs: object,
+            ):
                 calls["model"] = model
                 calls["debug"] = debug
 
@@ -94,7 +101,14 @@ class TestCLIScanAgentMode:
             total_cost_usd: float
 
         class FakeScanner:
-            def __init__(self, model: str = "sonnet", debug: bool = False):
+            def __init__(
+                self,
+                model: str = "sonnet",
+                debug: bool = False,
+                confirm_large_scan: bool = False,
+                estimate_cost_only: bool = False,
+                **kwargs: object,
+            ):
                 calls["model"] = model
 
             def configure_dast(self, target_url: str):
@@ -132,7 +146,14 @@ class TestCLIScanAgentMode:
             total_cost_usd: float
 
         class FakeScanner:
-            def __init__(self, model: str = "sonnet", debug: bool = False):
+            def __init__(
+                self,
+                model: str = "sonnet",
+                debug: bool = False,
+                confirm_large_scan: bool = False,
+                estimate_cost_only: bool = False,
+                **kwargs: object,
+            ):
                 pass
 
             async def scan(self, repo_path: str):
@@ -174,7 +195,14 @@ class TestCLIMainCallback:
             total_cost_usd: float
 
         class FakeScanner:
-            def __init__(self, model: str = "sonnet", debug: bool = False):
+            def __init__(
+                self,
+                model: str = "sonnet",
+                debug: bool = False,
+                confirm_large_scan: bool = False,
+                estimate_cost_only: bool = False,
+                **kwargs: object,
+            ):
                 calls["model"] = model
 
             async def scan(self, repo_path: str):

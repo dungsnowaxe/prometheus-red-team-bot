@@ -62,10 +62,15 @@ SUBAGENT_ARTIFACTS = {
         "requires": "VULNERABILITIES.json",
         "description": "Dynamic security validation",
     },
+    "fix-remediation": {
+        "creates": "FIX_SUGGESTIONS.json",
+        "requires": "VULNERABILITIES.json",
+        "description": "Advisory fix suggestions (writes only to .promptheus/)",
+    },
 }
 
 # Sub-agent execution order
-SUBAGENT_ORDER = ["assessment", "threat-modeling", "code-review", "report-generator", "dast"]
+SUBAGENT_ORDER = ["assessment", "threat-modeling", "code-review", "report-generator", "dast", "fix-remediation"]
 
 
 class SubAgentManager:

@@ -43,6 +43,29 @@ from promptheus.scanner.hooks import (
     create_threat_model_validation_hook,
 )
 from promptheus.scanner.artifacts import ArtifactLoadError, update_pr_review_artifacts
+from promptheus.scanner.design_decisions import (
+    load_design_decisions,
+    match_design_decisions,
+    format_design_decisions_for_prompt,
+)
+from promptheus.scanner.decision_traces import (
+    load_decision_traces,
+    match_decision_traces,
+    format_decision_traces_for_prompt,
+)
+from promptheus.scanner.risk_map import (
+    generate_risk_map,
+    load_risk_map,
+    classify_diff_tier,
+    TIER_CRITICAL,
+    TIER_MODERATE,
+    TIER_SKIP,
+    TIER_UNMAPPED,
+)
+from promptheus.scanner.policy_artifacts import (
+    get_merge_base,
+    materialize_policy_from_ref,
+)
 from promptheus.scanner.progress import (
     ProgressTracker,
     SECURITY_FILE,
@@ -85,6 +108,10 @@ from promptheus.scanner.pr_review_flow import (
     PRReviewContext,
     PRReviewState,
 )
+
+class _EstimateCostExit(Exception):
+    """Raised when --estimate-cost is used; CLI should exit 0."""
+
 
 __all__ = [
     "Scanner",
@@ -722,18 +749,28 @@ class Scanner:
     file polling for phase detection.
     """
 
-    def __init__(self, model: str = "sonnet", debug: bool = False):
+    def __init__(
+        self,
+        model: str = "sonnet",
+        debug: bool = False,
+        confirm_large_scan: bool = False,
+        estimate_cost_only: bool = False,
+    ):
         """
         Initialize streaming scanner.
 
         Args:
             model: Claude model name (e.g., sonnet, haiku)
             debug: Enable verbose debug output including agent narration
+            confirm_large_scan: If True, skip repo size/file count limits
+            estimate_cost_only: If True, scan() will print cost estimate and not run
         """
         self.model = model
         self.debug = debug
         self.total_cost = 0.0
         self.console = Console()
+        self.confirm_large_scan = confirm_large_scan
+        self.estimate_cost_only = estimate_cost_only
 
         # DAST configuration
         self.dast_enabled = False
@@ -780,6 +817,7 @@ class Scanner:
         resume_from: Optional[str],
         skip_subagents: list[str],
         dast_enabled_for_run: bool,
+        fix_remediation_enabled: bool = False,
     ) -> str:
         """Build authoritative scan-mode context injected into the orchestration prompt."""
         run_only_value = single_subagent or "none"
@@ -799,6 +837,7 @@ class Scanner:
             f"resume_from_subagent={resume_value}\n"
             f"skip_subagents={skip_value}\n"
             f"dast_enabled={'true' if dast_enabled_for_run else 'false'}\n"
+            f"fix_remediation_enabled={'true' if fix_remediation_enabled else 'false'}\n"
             f"dast_target_url={dast_url}\n"
             f"dast_timeout_seconds={dast_timeout}\n"
             f"dast_accounts_path={dast_accounts}\n"
@@ -923,8 +962,32 @@ class Scanner:
             raise RuntimeError(f"Failed to sync {label} skills: {e}") from e
 
     def _setup_dast_skills(self, repo: Path):
-        """Sync DAST skills to target project (required -- raises on missing)."""
+        """Sync DAST skills to target project (required -- raises on missing). Includes optional extra dirs from config."""
+        import shutil
+
         self._setup_skills(repo, "dast", required=True)
+        extra_dirs = config.get_dast_skills_dirs()
+        if not extra_dirs:
+            return
+        target_skills_dir = self._repo_output_path(
+            repo,
+            Path(".claude") / "skills" / "dast",
+            operation="dast skill sync target",
+        )
+        target_skills_dir.mkdir(parents=True, exist_ok=True)
+        for extra_dir in extra_dirs:
+            if not extra_dir.is_dir():
+                logger.warning("DAST skills dir not found or not a directory: %s", extra_dir)
+                continue
+            for skill_dir in extra_dir.iterdir():
+                if skill_dir.is_dir():
+                    dest = target_skills_dir / skill_dir.name
+                    try:
+                        shutil.copytree(skill_dir, dest, dirs_exist_ok=True)
+                        if self.debug:
+                            logger.debug("Synced extra DAST skill %s from %s", skill_dir.name, extra_dir)
+                    except (OSError, PermissionError) as e:
+                        logger.warning("Failed to sync DAST skill %s from %s: %s", skill_dir.name, extra_dir, e)
 
     def _setup_threat_modeling_skills(self, repo: Path):
         """Sync threat-modeling skills to target project (optional -- skips on missing)."""
@@ -1066,6 +1129,23 @@ class Scanner:
             self._sync_dast_accounts_file(repo)
         return await self._execute_scan(repo, resume_from=from_subagent)
 
+    def _estimate_scan_cost(self, repo: Path, files_count: int) -> None:
+        """Print a rough cost estimate and exit. Does not call the API."""
+        from promptheus.config import config
+
+        phases = 4  # assessment, threat-modeling, code-review, report-generator
+        if self.dast_enabled:
+            phases += 1
+        max_turns = config.get_max_turns()
+        # Rough: each phase may use up to max_turns; input+output tokens vary
+        estimated_turns = phases * max_turns
+        self.console.print(
+            f"[dim]Cost estimate (no API call):[/dim] "
+            f"~{phases} phases × up to {max_turns} turns/phase = up to ~{estimated_turns} turns total. "
+            f"Repository: {files_count} code files. "
+            "Actual cost depends on model pricing and token usage."
+        )
+
     async def scan(self, repo_path: str) -> ScanResult:
         """
         Run complete security scan with real-time progress streaming.
@@ -1080,6 +1160,21 @@ class Scanner:
         repo = Path(repo_path).resolve()
         if not repo.exists():
             raise ValueError(f"Repository path does not exist: {repo_path}")
+
+        if self.estimate_cost_only:
+            detected_languages = LanguageConfig.detect_languages(repo)
+            exclude_dirs = ScanConfig.get_excluded_dirs(detected_languages)
+
+            def should_scan(file_path: Path) -> bool:
+                return not any(excluded in file_path.parts for excluded in exclude_dirs)
+
+            all_code_files = []
+            for _lang, extensions in LanguageConfig.SUPPORTED_LANGUAGES.items():
+                for ext in extensions:
+                    files = [f for f in repo.glob(f"**/*{ext}") if should_scan(f)]
+                    all_code_files.extend(files)
+            self._estimate_scan_cost(repo, len(all_code_files))
+            raise _EstimateCostExit()
 
         if self.dast_enabled:
             self._sync_dast_accounts_file(repo)
@@ -1176,6 +1271,45 @@ class Scanner:
                     triage_result.matched_components,
                 )
 
+        # Policy artifacts: load from merge-base when possible (artifact trust boundary)
+        changed_files = list(diff_context.changed_files) if diff_context.changed_files else []
+        policy_dir = promptheus_dir
+        merge_base = get_merge_base(repo)
+        if merge_base:
+            materialized = materialize_policy_from_ref(repo, merge_base, include_vulnerabilities=False)
+            if materialized is not None:
+                policy_dir = materialized
+            else:
+                logger.warning(
+                    "Could not load policy artifacts from merge-base %s; using working tree",
+                    merge_base[:8] if merge_base else "?",
+                )
+        else:
+            logger.warning(
+                "Merge-base unavailable (not a git repo or ref not found); using working tree for policy artifacts"
+            )
+
+        # If PR adds or modifies any policy file under .promptheus/, treat as Tier 1 (critical)
+        risk_map = load_risk_map(policy_dir)
+        policy_artifact_names = ("risk_map.json", "design_decisions.json", THREAT_MODEL_FILE)
+        changed_norm = {p.replace("\\", "/").lstrip("/") for p in changed_files}
+        if any(
+            norm == f".promptheus/{name}" or norm.endswith(f"/.promptheus/{name}")
+            for norm in changed_norm
+            for name in policy_artifact_names
+        ):
+            risk_tier = TIER_CRITICAL
+        else:
+            risk_tier = classify_diff_tier(changed_files, risk_map) if risk_map else TIER_MODERATE
+        if risk_tier == TIER_CRITICAL:
+            if effective_attempts is None:
+                effective_attempts = max(5, config.get_pr_review_attempts())
+            if effective_timeout is None:
+                effective_timeout = max(240, config.get_pr_review_timeout_seconds())
+        elif risk_map and risk_tier == TIER_SKIP:
+            effective_attempts = 0
+            effective_timeout = config.get_pr_review_timeout_seconds()
+
         ctx = await self._prepare_pr_review_context(
             repo,
             promptheus_dir,
@@ -1184,6 +1318,8 @@ class Scanner:
             severity_threshold,
             pr_review_attempts_override=effective_attempts,
             pr_timeout_seconds_override=effective_timeout,
+            risk_tier=risk_tier,
+            policy_dir=policy_dir,
         )
         state = PRReviewState()
 
@@ -1200,7 +1336,12 @@ class Scanner:
             and not state.collected_pr_vulns
             and not state.ephemeral_pr_vulns
         ):
-            self._raise_pr_review_execution_failure(ctx, state)
+            # Tier skip (0 attempts) is intentional; do not treat as failure
+            if ctx.pr_review_attempts == 0 and getattr(ctx, "risk_tier", None) == TIER_SKIP:
+                if self.debug:
+                    self.console.print("  [dim]Skipped LLM review (Tier 3: no security-relevant files)[/dim]")
+            else:
+                self._raise_pr_review_execution_failure(ctx, state)
 
         await self._run_pr_refinement_and_verification(ctx, state)
 
@@ -1215,9 +1356,13 @@ class Scanner:
         severity_threshold: str,
         pr_review_attempts_override: Optional[int] = None,
         pr_timeout_seconds_override: Optional[int] = None,
+        risk_tier: str = TIER_MODERATE,
+        policy_dir: Optional[Path] = None,
     ) -> PRReviewContext:
         """Assemble all context needed before the PR review attempt loop."""
         scan_start_time = time.time()
+        if policy_dir is None:
+            policy_dir = promptheus_dir
 
         focused_diff_context = _build_focused_diff_context(diff_context)
         _enforce_focused_diff_coverage(diff_context, focused_diff_context)
@@ -1238,7 +1383,7 @@ class Scanner:
         )
 
         relevant_threats = filter_relevant_threats(
-            promptheus_dir / THREAT_MODEL_FILE,
+            policy_dir / THREAT_MODEL_FILE,
             focused_diff_context.changed_files,
         )
 
@@ -1259,6 +1404,33 @@ class Scanner:
         )
         threat_context_summary = summarize_threats_for_prompt(relevant_threats)
         vuln_context_summary = summarize_vulnerabilities_for_prompt(relevant_baseline_vulns)
+        design_decisions = load_design_decisions(policy_dir)
+        matched_decisions = match_design_decisions(
+            design_decisions, focused_diff_context.changed_files
+        )
+        design_decisions_section = (
+            format_design_decisions_for_prompt(matched_decisions)
+            if matched_decisions
+            else ""
+        )
+        decisions_dir = promptheus_dir / "decisions"
+        decision_traces = load_decision_traces(decisions_dir)
+        matched_traces = match_decision_traces(
+            decision_traces, focused_diff_context.changed_files, exclude_fixed=True
+        )
+        changed_set = set(focused_diff_context.changed_files or [])
+        any_mitigated_by_changed = False
+        for t in matched_traces:
+            mitigated_by = t.get("mitigated_by") or []
+            if any(
+                isinstance(m, str) and m.replace("\\", "/") in {p.replace("\\", "/") for p in changed_set}
+                for m in mitigated_by
+            ):
+                any_mitigated_by_changed = True
+                break
+        decision_traces_section = format_decision_traces_for_prompt(
+            matched_traces, emphasize_mitigation_recheck=any_mitigated_by_changed
+        ) if matched_traces else ""
         security_adjacent_files = suggest_security_adjacent_files(
             repo,
             focused_diff_context.changed_files,
@@ -1321,6 +1493,20 @@ class Scanner:
 
 ## RELEVANT BASELINE VULNERABILITIES (from VULNERABILITIES.json)
 {vuln_context_summary}
+"""
+        if design_decisions_section:
+            contextualized_prompt += f"""
+
+## DESIGN DECISIONS
+{design_decisions_section}
+"""
+        if decision_traces_section:
+            contextualized_prompt += f"""
+
+## DECISION TRACES
+{decision_traces_section}
+"""
+        contextualized_prompt += f"""
 
 ## SECURITY-ADJACENT FILES TO CHECK FOR REACHABILITY
 {adjacent_file_hints}
@@ -1375,6 +1561,7 @@ Only report findings at or above: {severity_threshold}
             pr_grep_default_scope=pr_grep_default_scope,
             scan_start_time=scan_start_time,
             severity_threshold=severity_threshold,
+            risk_tier=risk_tier,
         )
 
     def _raise_pr_review_execution_failure(
@@ -1786,6 +1973,24 @@ Only report findings at or above: {severity_threshold}
 
         files_scanned = len(all_code_files)
 
+        # Optional repo size / file count limits (require --confirm-large-scan when exceeded)
+        max_files = config.get_max_scan_files()
+        max_mb = config.get_max_repo_mb()
+        if not self.confirm_large_scan:
+            if max_files is not None and files_scanned > max_files:
+                raise RuntimeError(
+                    f"Repository has {files_scanned} code files (limit: {max_files}). "
+                    "Set PROMPTHEUS_MAX_SCAN_FILES higher or run with --confirm-large-scan."
+                )
+            if max_mb is not None:
+                total_bytes = sum(f.stat().st_size for f in all_code_files if f.exists())
+                total_mb = total_bytes / (1024 * 1024)
+                if total_mb > max_mb:
+                    raise RuntimeError(
+                        f"Repository code size ~{total_mb:.1f} MB (limit: {max_mb} MB). "
+                        "Set PROMPTHEUS_MAX_REPO_MB higher or run with --confirm-large-scan."
+                    )
+
         # Deterministic agentic detection (used for prompt steering + conditional ASI enforcement)
         detection_files = collect_agentic_detection_files(
             repo, all_code_files, exclude_dirs=exclude_dirs
@@ -1895,6 +2100,10 @@ Only report findings at or above: {severity_threshold}
             max_retries=1,
         )
 
+        # Design decisions for code-review: load all and inject to reduce false positives
+        design_decisions = load_design_decisions(promptheus_dir)
+        design_decisions_context = format_design_decisions_for_prompt(design_decisions)
+
         # Create agent definitions with CLI model override and DAST target URL
         # This allows --model flag to cascade to all agents while respecting env vars
         # The DAST target URL is passed to substitute {target_url} placeholders in the prompt
@@ -1904,9 +2113,12 @@ Only report findings at or above: {severity_threshold}
         agents = create_agent_definitions(
             cli_model=self.model,
             dast_target_url=dast_url,
+            dast_cwe_skill_overrides=config.get_dast_cwe_skill_overrides() or None,
             threat_modeling_context=threat_modeling_context,
+            design_decisions_context=design_decisions_context or None,
         )
 
+        use_parallel_phases = False
         if single_subagent:
             skip_subagents = [
                 subagent for subagent in SUBAGENT_ORDER if subagent != single_subagent
@@ -1916,12 +2128,20 @@ Only report findings at or above: {severity_threshold}
             skip_subagents = list(SUBAGENT_ORDER[:resume_index])
         else:
             skip_subagents = []
+            if not config.get_fix_remediation_enabled():
+                skip_subagents.append("fix-remediation")
+            # When both report-generator and DAST are enabled, run phases 1–3 only first, then 4+5 in parallel
+            if self.dast_enabled:
+                use_parallel_phases = True
+                skip_subagents = ["report-generator", "dast", "fix-remediation"]
         dast_enabled_for_run = needs_dast
+        fix_remediation_enabled = config.get_fix_remediation_enabled()
         scan_mode_context = self._build_scan_execution_mode_context(
             single_subagent=single_subagent,
             resume_from=resume_from,
             skip_subagents=skip_subagents,
             dast_enabled_for_run=dast_enabled_for_run,
+            fix_remediation_enabled=fix_remediation_enabled,
         )
         allowed_tools = list(_BASE_ALLOWED_TOOLS)
         if dast_enabled_for_run:
@@ -1991,7 +2211,36 @@ Only report findings at or above: {severity_threshold}
                         # ResultMessage indicates scan completion - exit the loop
                         break
 
+            max_cost = config.get_max_scan_cost_usd()
+            if max_cost is not None and self.total_cost > max_cost:
+                logger.warning(
+                    "Scan cost $%.4f exceeded budget $%.2f",
+                    self.total_cost,
+                    max_cost,
+                )
+                self.console.print(
+                    f"  ⚠️  Cost ${self.total_cost:.4f} exceeded budget ${max_cost:.2f}",
+                    style="yellow",
+                )
+
             self.console.print("\n" + "=" * 80)
+
+            # Generate risk_map.json from THREAT_MODEL after full or threat-modeling-inclusive run
+            threat_model_path = promptheus_dir / THREAT_MODEL_FILE
+            if threat_model_path.exists():
+                generate_risk_map(threat_model_path, promptheus_dir / "risk_map.json")
+
+            # When report-generator and DAST were skipped for parallel execution, run them now in parallel
+            if use_parallel_phases:
+                self.console.print(
+                    "\n  Running report generation and DAST in parallel...", style="cyan"
+                )
+                await asyncio.gather(
+                    self._execute_scan(repo, single_subagent="report-generator"),
+                    self._execute_scan(repo, single_subagent="dast"),
+                )
+                if config.get_fix_remediation_enabled():
+                    await self._execute_scan(repo, single_subagent="fix-remediation")
 
         except Exception as e:
             self.console.print(f"\n❌ Scan failed: {e}", style="bold red")

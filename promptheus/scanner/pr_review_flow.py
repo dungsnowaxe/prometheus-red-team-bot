@@ -70,6 +70,8 @@ class PRReviewContext:
     pr_grep_default_scope: str
     scan_start_time: float
     severity_threshold: str
+    # Threat-aware tier: "critical" | "moderate" | "skip" | "unmapped"; used for routing and skip logic
+    risk_tier: str = "moderate"
 
 
 @dataclass

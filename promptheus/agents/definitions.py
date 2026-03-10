@@ -12,7 +12,9 @@ AGENT_PROMPTS = load_all_agent_prompts()
 def create_agent_definitions(
     cli_model: Optional[str] = None,
     dast_target_url: Optional[str] = None,
+    dast_cwe_skill_overrides: Optional[Dict[str, str]] = None,
     threat_modeling_context: Optional[str] = None,
+    design_decisions_context: Optional[str] = None,
 ) -> Dict[str, AgentDefinition]:
     """
     Create agent definitions with optional CLI model override and DAST target URL.
@@ -32,8 +34,13 @@ def create_agent_definitions(
         dast_target_url: Optional target URL for DAST testing. If provided,
                         the {target_url} placeholders in the DAST prompt will
                         be substituted with this value.
+        dast_cwe_skill_overrides: Optional CWE ID -> skill name map; when a
+                        vulnerability has a CWE in this map, use the specified
+                        skill for validation if available.
         threat_modeling_context: Optional context injected into the threat-modeling
                                 agent prompt (after the role line).
+        design_decisions_context: Optional "Design decisions" section injected into
+                                 the code-review agent prompt (reduces false positives).
 
     Returns:
         Dictionary mapping agent names to AgentDefinition objects
@@ -61,6 +68,15 @@ def create_agent_definitions(
     dast_prompt = AGENT_PROMPTS["dast"]
     if dast_target_url:
         dast_prompt = dast_prompt.replace("{target_url}", dast_target_url)
+    if dast_cwe_skill_overrides:
+        overrides_text = ", ".join(
+            f"{cwe} -> {skill}" for cwe, skill in sorted(dast_cwe_skill_overrides.items())
+        )
+        dast_prompt += (
+            "\n\n## CWE to skill overrides\n"
+            "Use these skills for the given CWEs when available (override default mapping): "
+            f"{overrides_text}\n"
+        )
 
     threat_modeling_prompt = AGENT_PROMPTS["threat_modeling"]
     if threat_modeling_context:
@@ -74,6 +90,12 @@ def create_agent_definitions(
             threat_modeling_prompt = (
                 f"{threat_modeling_prompt}\n\n{threat_modeling_context.strip()}"
             )
+
+    code_review_prompt = AGENT_PROMPTS["code_review"]
+    if design_decisions_context:
+        code_review_prompt = (
+            f"{code_review_prompt}\n\n## DESIGN DECISIONS\n{design_decisions_context}"
+        )
 
     return {
         "assessment": AgentDefinition(
@@ -90,7 +112,7 @@ def create_agent_definitions(
         ),
         "code-review": AgentDefinition(
             description="Applies security thinking methodology to find vulnerabilities with concrete evidence and exploitability analysis",
-            prompt=AGENT_PROMPTS["code_review"],
+            prompt=code_review_prompt,
             tools=["Read", "Grep", "Glob", "Write"],
             model=config.get_agent_model("code_review", cli_override=cli_model),
         ),
@@ -114,6 +136,12 @@ def create_agent_definitions(
             prompt=dast_prompt,
             tools=["Read", "Write", "Skill", "Bash"],
             model=config.get_agent_model("dast", cli_override=cli_model),
+        ),
+        "fix-remediation": AgentDefinition(
+            description="Suggests fixes for entries in VULNERABILITIES.json and writes FIX_SUGGESTIONS.json to .promptheus/ (advisory only; does not modify repo files)",
+            prompt=AGENT_PROMPTS["fix_remediation"],
+            tools=["Read", "Write"],
+            model=config.get_agent_model("fix_remediation", cli_override=cli_model),
         ),
     }
 

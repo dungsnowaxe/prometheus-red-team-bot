@@ -20,11 +20,11 @@ class TestSubagentOrder:
     def test_order_starts_with_assessment(self):
         assert SUBAGENT_ORDER[0] == "assessment"
 
-    def test_order_ends_with_dast(self):
-        assert SUBAGENT_ORDER[-1] == "dast"
+    def test_order_ends_with_fix_remediation(self):
+        assert SUBAGENT_ORDER[-1] == "fix-remediation"
 
-    def test_order_has_five_phases(self):
-        assert len(SUBAGENT_ORDER) == 5
+    def test_order_has_six_phases(self):
+        assert len(SUBAGENT_ORDER) == 6
 
     def test_all_phases_in_artifacts_map(self):
         for phase in SUBAGENT_ORDER:
@@ -142,12 +142,12 @@ class TestGetResumeSubagents:
     def test_resume_from_code_review(self, temp_dir: Path):
         manager = SubAgentManager(temp_dir)
         result = manager.get_resume_subagents("code-review")
-        assert result == ["code-review", "report-generator", "dast"]
+        assert result == ["code-review", "report-generator", "dast", "fix-remediation"]
 
     def test_resume_from_dast(self, temp_dir: Path):
         manager = SubAgentManager(temp_dir)
         result = manager.get_resume_subagents("dast")
-        assert result == ["dast"]
+        assert result == ["dast", "fix-remediation"]
 
     def test_unknown_subagent_raises(self, temp_dir: Path):
         manager = SubAgentManager(temp_dir)

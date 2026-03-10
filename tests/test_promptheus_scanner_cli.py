@@ -37,7 +37,14 @@ def test_cli_agent_mode_dispatches_to_promptheus_scanner(
         total_cost_usd: float
 
     class FakeScanner:
-        def __init__(self, model: str = "sonnet", debug: bool = False):
+        def __init__(
+            self,
+            model: str = "sonnet",
+            debug: bool = False,
+            confirm_large_scan: bool = False,
+            estimate_cost_only: bool = False,
+            **kwargs: object,
+        ):
             calls["model"] = model
             calls["debug"] = debug
 

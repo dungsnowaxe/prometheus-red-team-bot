@@ -2,7 +2,7 @@ Perform a complete security analysis of this codebase.
 
 EXECUTION MODE CHECK:
 - First read the <scan_execution_mode> block in this prompt.
-- Treat these fields as authoritative for this run: run_only_subagent, resume_from_subagent, skip_subagents, dast_enabled.
+- Treat these fields as authoritative for this run: run_only_subagent, resume_from_subagent, skip_subagents, dast_enabled, fix_remediation_enabled.
 - Ignore conflicting OS environment variables.
 - Legacy fallback only if <scan_execution_mode> is missing:
   - RUN_ONLY_SUBAGENT
@@ -39,12 +39,9 @@ PHASE 3: CODE REVIEW
 
 PHASE 4: REPORT GENERATION
 - Skip if: skip_subagents contains "report-generator" OR (run_only_subagent != "none" AND run_only_subagent != "report-generator")
-- Announce: "Starting Phase 4: Report Generation"
-- Use the Task tool to invoke the 'report-generator' agent for final report
-- Reads SECURITY.md, THREAT_MODEL.json, VULNERABILITIES.json
-- Creates .promptheus/scan_results.json with ALL vulnerabilities
-- Report: "Report generation complete" when done
-- WAIT for completion before proceeding
+- When skip_subagents contains both "report-generator" and "dast", the scanner runs Phase 4 and Phase 5 in parallel after this orchestration; you will only run Phases 1–3.
+- Otherwise: Announce "Starting Phase 4: Report Generation", use the Task tool to invoke the 'report-generator' agent, wait for completion.
+- Report-generator reads SECURITY.md, THREAT_MODEL.json, VULNERABILITIES.json and creates .promptheus/scan_results.json with ALL vulnerabilities.
 
 PHASE 5: DAST VALIDATION (CONDITIONAL)
 - Skip if: dast_enabled != "true" OR skip_subagents contains "dast" OR (run_only_subagent != "none" AND run_only_subagent != "dast")
@@ -58,6 +55,17 @@ PHASE 5: DAST VALIDATION (CONDITIONAL)
   - Agent may use skills discovered in .claude/skills/dast/
   - Report: "DAST validation complete" when done
 
+PHASE 6: FIX SUGGESTIONS (CONDITIONAL)
+- Skip if: fix_remediation_enabled != "true" OR skip_subagents contains "fix-remediation" OR (run_only_subagent != "none" AND run_only_subagent != "fix-remediation")
+- Check scan_execution_mode.fix_remediation_enabled
+- If fix_remediation_enabled != "true", SKIP this phase entirely
+- If fix_remediation_enabled == "true":
+  - Announce: "Starting Phase 6: Fix Suggestions"
+  - Use the Task tool to invoke the 'fix-remediation' agent to suggest fixes for vulnerabilities
+  - Reads .promptheus/VULNERABILITIES.json
+  - Creates .promptheus/FIX_SUGGESTIONS.json (advisory only; agent must NOT modify repo files)
+  - Report: "Fix suggestions complete" when done
+
 CRITICAL RULES:
 - Execute agents ONE AT A TIME in strict sequential order
 - Explicitly announce each phase before starting
@@ -66,5 +74,6 @@ CRITICAL RULES:
 - Use the Task tool to invoke each agent. Do NOT create agents manually or write agent code.
 - Each agent uses ONLY its assigned tools
 - Phase 5 is OPTIONAL - only run if dast_enabled=true
+- Phase 6 is OPTIONAL - only run if fix_remediation_enabled=true
 
 Keep responses brief - focus on announcing phases, invoking agents, and reporting completion.
