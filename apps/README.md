@@ -8,7 +8,7 @@ One directory per delivery surface. Core logic lives in `promptheus/`; app code 
 | **dashboard** | Web UI (Streamlit) | `streamlit run apps/dashboard/main.py` or `streamlit run promptheus/interfaces/dashboard.py` (shim) |
 | **slack_bot** | Slack RedTeam bot | `python -m apps.slack_bot.main` or `python -m promptheus.interfaces.slack_bot` (shim) |
 | **api** | HTTP API for desktop/mobile | `uvicorn apps.api.main:app --reload` |
-| **desktop** | *(planned)* Native desktop app | Will call `api` |
+| **desktop** | Native desktop app (Electron) | See [apps/desktop/](desktop/) — `cd apps/desktop && npm start` (dev) or run the packaged app; bundles Promptheus CLI. Supports URL scan, agent-mode repo scan, and PR/code review. |
 | **mobile** | *(planned)* Mobile app | Will call `api` |
 
 Install only what you need:

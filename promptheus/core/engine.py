@@ -34,6 +34,24 @@ class Report:
     def add(self, r: ScanResult) -> None:
         self.results.append(r)
 
+    def to_json(self) -> str:
+        """Convert to JSON string."""
+        import json
+
+        data = {
+            "results": [
+                {
+                    "payload_id": r.payload_id,
+                    "name": r.name,
+                    "vulnerable": r.vulnerable,
+                    "severity": r.severity,
+                    "reasoning": r.reasoning,
+                }
+                for r in self.results
+            ]
+        }
+        return json.dumps(data)
+
 
 class RedTeamEngine:
     """Run attacks via a TargetAdapter and judge responses."""
