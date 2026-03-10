@@ -52,18 +52,18 @@ promptheus/
 
 ### Judge (LLM)
 
-Bạn **không bắt buộc** phải có OpenAI. Có 3 cách:
+You have multiple options for the LLM judge:
 
-1. **OpenAI** (mặc định):
+1. **OpenAI** (default):
    - `OPENAI_API_KEY=sk-...`
-   - `PROMPTHEUS_JUDGE_MODEL=gpt-4o-mini` (mặc định)
+   - `PROMPTHEUS_JUDGE_MODEL=gpt-4o-mini` (default)
 
-2. **LLM khác (API tương thích OpenAI)** — Groq, Ollama, Together, OpenRouter, Azure...
-   - `PROMPTHEUS_JUDGE_BASE_URL` = base URL (vd: `https://api.groq.com/openai/v1`, `http://localhost:11434/v1` cho Ollama)
-   - `PROMPTHEUS_JUDGE_API_KEY` = API key của provider đó (Groq: lấy tại groq.com, Ollama: để trống hoặc `ollama`)
-   - `PROMPTHEUS_JUDGE_MODEL` = tên model (vd: `llama3.1-8b`, `mixtral-8x7b-32768`)
+2. **OpenAI-compatible APIs** — Groq, Ollama, Together, OpenRouter, Azure, GLM (Zhipu)...
+   - `PROMPTHEUS_JUDGE_BASE_URL` = base URL (e.g., `https://api.groq.com/openai/v1`, `http://localhost:11434/v1` for Ollama)
+   - `PROMPTHEUS_JUDGE_API_KEY` = API key for that provider (Groq: from groq.com, Ollama: leave empty or `ollama`)
+   - `PROMPTHEUS_JUDGE_MODEL` = model name (e.g., `llama3.1-8b`, `mixtral-8x7b-32768`)
 
-3. **Không set key nào** → Judge dùng **MockJudge**: luôn trả "Safe", chỉ để test pipeline/adapters (không đánh giá thật).
+3. **No key set** → Judge uses **MockJudge**: always returns "Safe" for testing pipeline/adapters only (not real evaluation).
 
 Ví dụ **Ollama** (chạy local, không cần key):
 ```bash
@@ -107,9 +107,12 @@ source .venv/bin/activate   # Windows: .venv\Scripts\activate
 
 # Install dependencies
 pip install -r requirements.txt
+
+# Run the setup wizard (optional - configure API provider)
+promptheus init
 ```
 
-**Last verified:** 2026-03-04 ✅
+**Last verified:** 2026-03-10 ✅
 
 ## Development workflow (per SDD)
 
@@ -119,19 +122,61 @@ pip install -r requirements.txt
 
 ## Running
 
-### CLI (REST target)
+### CLI
+
+The PROMPHEUS CLI supports two scan modes:
+
+#### 1. Legacy Mode (REST API target)
 
 ```bash
 # Activate venv first
 source .venv/bin/activate
 
-# Set Judge (OpenAI / GLM / Ollama / Groq) nếu cần đánh giá thật; không set = Mock
-python -m promptheus scan --target-url https://your-api.com/chat
-# hoặc dùng short flag
-python -m promptheus scan -u https://your-api.com/chat
+# Set Judge (OpenAI / GLM / Ollama / Groq) for real evaluation; omit for Mock
+promptheus scan --target-url https://your-api.com/chat
+# or with short flag
+promptheus scan -u https://your-api.com/chat
 ```
 
 The target API should accept POST JSON with a `prompt` (or configurable key) and return a body with `reply` / `response` / `content` / `text`.
+
+#### 2. Agent Mode (codebase vulnerability scan)
+
+```bash
+# Scan a local repository with AI agents
+promptheus scan --mode agent --target-path /path/to/repo
+
+# With options
+promptheus scan --mode agent --target-path /path/to/repo \
+  --model sonnet \          # Model choice (sonnet, haiku, opus)
+  --debug \                 # Verbose output
+  --dast \                  # Enable DAST validation
+  --dast-url http://localhost:3000  # Target URL for DAST
+
+# Large repositories (exceeds limits)
+promptheus scan --mode agent --target-path /path/to/large/repo \
+  --confirm-large-scan      # Proceed despite file/size limits
+```
+
+Agent mode runs multiple AI agents (architecture assessment, threat modeling, code review, report generation, optional DAST) to perform a comprehensive security audit. Results are saved to `.promptheus/` in the target repository.
+
+**Agent mode configuration:**
+- `PROMPTHEUS_SCAN_TIMEOUT_SECONDS` — Timeout for agent scan in seconds (default: 3600 = 1 hour). Set to `0` to disable timeout.
+- `PROMPTHEUS_MAX_SCAN_FILES` — Maximum file count limit (requires `--confirm-large-scan` when exceeded)
+- `PROMPTHEUS_MAX_REPO_MB` — Maximum repository size in MB (requires `--confirm-large-scan` when exceeded)
+
+#### 3. PR Review (diff-based security review)
+
+```bash
+# Review a commit range
+promptheus pr-review --path /path/to/repo --range main..feature-branch
+
+# Review last N commits
+promptheus pr-review --path /path/to/repo --last 10
+
+# With severity filter
+promptheus pr-review --path /path/to/repo --range main..feature --severity medium
+```
 
 ### Local mock target (for testing)
 
@@ -156,6 +201,22 @@ streamlit run apps/dashboard/main.py
 
 Enter Target URL and click **Start Attack**. Results appear in a table with vulnerable rows highlighted in red.
 
+### Desktop app (Electron)
+
+```bash
+cd apps/desktop
+npm install
+npm start      # Development mode
+npm run make   # Build packaged app with bundled CLI
+```
+
+The desktop app supports:
+- **URL scan** — Legacy API scan against a target URL
+- **Agent scan** — Full codebase vulnerability scan on a repository path
+- **PR review** — Security review of diffs and branches
+
+The packaged app includes a bundled Promptheus CLI — end users don't need to install Python or Promptheus separately.
+
 ### Slack bot (Socket Mode)
 
 ```bash
@@ -179,7 +240,10 @@ Each payload has `id`, `name`, `prompt`, and `judge_expectation` (rubric for the
 
 ## References
 
-- [Scanner configuration](docs/scanner_config.md) — Cost limits, threat-aware scanning, design decisions, fix-remediation, artifact trust (for codebase security scans).
-- PyRIT (Microsoft) — Adapter-style "Targets".
-- Promptfoo — LLM rubric / scoring.
-- Slack Bolt (Python) — Bot framework; we intentionally allow bot_message and use a loop breaker.
+- [Scanner configuration](docs/scanner_config.md) — Cost limits, threat-aware scanning, design decisions, fix-remediation, artifact trust (for codebase security scans)
+- [Timeout configuration](docs/timeout_configuration.md) — Agent scan timeout settings and troubleshooting
+- [Desktop app](apps/desktop/README.md) — Native desktop application with bundled CLI
+- [Apps directory](apps/README.md) — Overview of all Promptheus applications
+- PyRIT (Microsoft) — Adapter-style "Targets"
+- Promptfoo — LLM rubric / scoring
+- Slack Bolt (Python) — Bot framework; we intentionally allow bot_message and use a loop breaker

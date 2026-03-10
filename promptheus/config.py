@@ -198,6 +198,7 @@ class RuntimeConfig:
         "max_turns": 50,
         "pr_review_attempts": 3,
         "pr_review_timeout_seconds": 180,
+        "scan_timeout_seconds": 3600,  # 1 hour default
     }
 
     def get_agent_model(self, agent_name: str, cli_override: str | None = None) -> str:
@@ -280,6 +281,24 @@ class RuntimeConfig:
         except ValueError:
             return None
         return value if value > 0 else None
+
+    def get_scan_timeout_seconds(self) -> Optional[int]:
+        """
+        Optional timeout for agent scan in seconds. When set to 0 or "0", timeout is disabled (infinite wait).
+        Env: PROMPTHEUS_SCAN_TIMEOUT_SECONDS (default: 3600 seconds = 1 hour).
+        """
+        raw = os.getenv("PROMPTHEUS_SCAN_TIMEOUT_SECONDS")
+        if raw is None:
+            return self.DEFAULTS["scan_timeout_seconds"]
+        # Check for explicit "0" to disable timeout
+        if raw.strip() == "0":
+            return None
+        try:
+            value = int(raw)
+        except ValueError:
+            return self.DEFAULTS["scan_timeout_seconds"]
+        # Return None for 0, otherwise return the value (must be non-negative)
+        return None if value == 0 else (value if value > 0 else self.DEFAULTS["scan_timeout_seconds"])
 
 
 config = RuntimeConfig()

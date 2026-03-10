@@ -91,6 +91,9 @@ def _run_agent_scan(
             typer.echo(result.to_json())
     except _EstimateCostExit:
         raise typer.Exit(0)
+    except RuntimeError as e:
+        # Handle scan errors including timeout - error already displayed by scanner
+        raise typer.Exit(1)
 
 
 @app.callback(invoke_without_command=True)

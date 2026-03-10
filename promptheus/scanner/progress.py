@@ -33,6 +33,7 @@ class ProgressTracker:
         self.files_read = set()
         self.files_written = set()
         self.subagent_stack = []  # Track nested subagents
+        self.completed_subagents = set()  # Track finished subagents for completion detection
         self.last_update = datetime.now()
         self.phase_start_time = None
         self.single_subagent = single_subagent
@@ -153,6 +154,9 @@ class ProgressTracker:
 
         This provides reliable phase boundary detection without file polling.
         """
+        # Track completed subagent for completion detection
+        self.completed_subagents.add(agent_name)
+
         if self.subagent_stack and self.subagent_stack[-1] == agent_name:
             self.subagent_stack.pop()
 
@@ -212,3 +216,19 @@ class ProgressTracker:
             "files_written": len(self.files_written),
             "subagent_depth": len(self.subagent_stack),
         }
+
+    def get_completed_subagents(self) -> set[str]:
+        """Return the set of completed subagent names"""
+        return self.completed_subagents.copy()
+
+    def all_expected_subagents_completed(self, expected_count: int) -> bool:
+        """
+        Check if all expected subagents have completed.
+
+        Args:
+            expected_count: Number of expected subagents
+
+        Returns:
+            True if the number of completed subagents meets or exceeds expected_count
+        """
+        return len(self.completed_subagents) >= expected_count

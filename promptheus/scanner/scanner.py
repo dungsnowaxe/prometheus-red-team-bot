@@ -2187,29 +2187,80 @@ Only report findings at or above: {severity_threshold}
             f"{load_prompt('main', category='orchestration')}\n\n{scan_mode_context}"
         )
 
+        # Calculate expected subagents for completion detection
+        if single_subagent:
+            expected_subagents = 1
+        elif resume_from:
+            # When resuming, count from resume_from onwards
+            resume_index = SUBAGENT_ORDER.index(resume_from)
+            expected_subagents = len(SUBAGENT_ORDER) - resume_index
+        else:
+            # Full scan: base 4 subagents + optional DAST + optional fix-remediation
+            expected_subagents = 4  # assessment, threat-modeling, code-review, report-generator
+            if dast_enabled_for_run:
+                expected_subagents += 1
+            if fix_remediation_enabled:
+                expected_subagents += 1
+
+        # Get timeout configuration
+        scan_timeout = config.get_scan_timeout_seconds()
+        if self.debug and scan_timeout is not None:
+            logger.debug("Scan timeout: %d seconds (disabled when set to 0)", scan_timeout)
+        elif self.debug:
+            logger.debug("Scan timeout: disabled (infinite wait)")
+
         # Execute scan with streaming progress
         try:
             async with ClaudeSDKClient(options=options) as client:
                 await client.query(orchestration_prompt)
 
-                # Stream messages for real-time progress
-                async for message in client.receive_messages():
-                    if isinstance(message, AssistantMessage):
-                        for block in message.content:
-                            if isinstance(block, TextBlock):
-                                # Show agent narration if in debug mode
-                                tracker.on_assistant_text(block.text)
+                # Define the message loop as a coroutine for timeout wrapping
+                async def _message_loop() -> None:
+                    """Inner message loop that can be wrapped with timeout."""
+                    completion_via_subagent_tracking = False
 
-                    elif isinstance(message, ResultMessage):
-                        # Track costs in real-time
-                        if message.total_cost_usd:
-                            self.total_cost = message.total_cost_usd
+                    # Stream messages for real-time progress
+                    async for message in client.receive_messages():
+                        if isinstance(message, AssistantMessage):
+                            for block in message.content:
+                                if isinstance(block, TextBlock):
+                                    # Show agent narration if in debug mode
+                                    tracker.on_assistant_text(block.text)
+
+                        elif isinstance(message, ResultMessage):
+                            # Track costs in real-time
+                            if message.total_cost_usd:
+                                self.total_cost = message.total_cost_usd
+                                if self.debug:
+                                    self.console.print(
+                                        f"  💰 Cost update: ${self.total_cost:.4f}", style="cyan"
+                                    )
+                            # ResultMessage indicates scan completion - exit the loop
+                            break
+
+                        # Check for completion via subagent tracking (fallback mechanism)
+                        if tracker.all_expected_subagents_completed(expected_subagents):
+                            completion_via_subagent_tracking = True
                             if self.debug:
-                                self.console.print(
-                                    f"  💰 Cost update: ${self.total_cost:.4f}", style="cyan"
+                                logger.debug(
+                                    "Completion detected via subagent tracking: %d/%d subagents completed",
+                                    len(tracker.get_completed_subagents()),
+                                    expected_subagents,
                                 )
-                        # ResultMessage indicates scan completion - exit the loop
-                        break
+                            break
+
+                    if completion_via_subagent_tracking and self.debug:
+                        logger.debug("Scan completed via subagent tracking without ResultMessage")
+
+                # Execute message loop with optional timeout
+                if scan_timeout is not None:
+                    try:
+                        await asyncio.wait_for(_message_loop(), timeout=scan_timeout)
+                    except asyncio.TimeoutError:
+                        # Re-raise with additional context for handling below
+                        raise
+                else:
+                    await _message_loop()
 
             max_cost = config.get_max_scan_cost_usd()
             if max_cost is not None and self.total_cost > max_cost:
@@ -2241,6 +2292,35 @@ Only report findings at or above: {severity_threshold}
                 )
                 if config.get_fix_remediation_enabled():
                     await self._execute_scan(repo, single_subagent="fix-remediation")
+
+        except asyncio.TimeoutError:
+            # Handle scan timeout - provide detailed error message with progress info
+            elapsed_time = time.time() - scan_start_time
+            completed = tracker.get_completed_subagents()
+            summary = tracker.get_summary()
+
+            self.console.print(
+                f"\n❌ Scan timeout after {elapsed_time:.1f}s (limit: {scan_timeout}s)",
+                style="bold red",
+            )
+            self.console.print(
+                f"   Progress: {summary['tool_count']} tools executed, "
+                f"{summary['files_read']} files read, "
+                f"{len(completed)}/{expected_subagents} subagents completed",
+                style="red",
+            )
+            self.console.print(
+                f"   💡 Try again with --debug for more details, or increase PROMPTHEUS_SCAN_TIMEOUT_SECONDS",
+                style="cyan",
+            )
+
+            # Re-raise with additional context
+            raise RuntimeError(
+                f"Scan timed out after {elapsed_time:.1f}s. "
+                f"Progress: {summary['tool_count']} tools, {summary['files_read']} files, "
+                f"{len(completed)}/{expected_subagents} subagents. "
+                f"Try with --debug or increase PROMPTHEUS_SCAN_TIMEOUT_SECONDS (current: {scan_timeout}s)"
+            ) from None
 
         except Exception as e:
             self.console.print(f"\n❌ Scan failed: {e}", style="bold red")
