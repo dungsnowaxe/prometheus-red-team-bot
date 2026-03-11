@@ -1,11 +1,16 @@
 # PyInstaller spec for Promptheus CLI (used by desktop app bundle).
 # Run from repo root: pyinstaller apps/desktop/promptheus-cli.spec
 
+import os
 block_cipher = None
 
+# SPECPATH is the directory containing this spec file (apps/desktop/).
+# We resolve paths relative to the repo root.
+_repo_root = os.path.abspath(os.path.join(SPECPATH, '..', '..'))
+
 a = Analysis(
-    ['promptheus/__main__.py'],
-    pathex=[],
+    [os.path.join(_repo_root, 'promptheus', '__main__.py')],
+    pathex=[_repo_root],
     binaries=[],
     datas=[],
     hiddenimports=[
