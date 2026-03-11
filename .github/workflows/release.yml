@@ -5,12 +5,11 @@ on:
     tags:
       - 'v*'
 
-permissions:
-  contents: write
-
 jobs:
   build-binary:
     name: Build binary (${{ matrix.os }})
+    permissions:
+      contents: read
     strategy:
       matrix:
         include:
@@ -70,6 +69,8 @@ jobs:
     name: Create GitHub Release
     needs: [build-binary, publish-pypi]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
