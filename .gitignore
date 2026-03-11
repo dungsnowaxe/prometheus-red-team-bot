@@ -40,3 +40,9 @@ htmlcov/
 
 # PROMPTHEUS artifacts
 .promptheus/
+
+# Claude Code local settings
+.claude/
+
+# Backup files
+*.bak
