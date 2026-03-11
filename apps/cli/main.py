@@ -1,6 +1,9 @@
 """Typer CLI with first-run wizard, config show, scan, and pr-review commands."""
 
 import asyncio
+import json
+from datetime import datetime, timezone
+from pathlib import Path
 
 import typer
 from rich.console import Console
@@ -9,6 +12,7 @@ from rich.table import Table
 from promptheus.adapters.rest import RestAPITarget
 from promptheus.config import get_resolved_config_display, reload_config
 from promptheus.config_store import config_exists
+from promptheus.core.attacks import load_payloads
 from promptheus.core.engine import RedTeamEngine
 from promptheus.diff import get_diff_from_commit_list, get_diff_from_commits, get_last_n_commits, parse_unified_diff
 from promptheus.diff.parser import DiffContext
@@ -55,13 +59,48 @@ def _ensure_configured() -> None:
     reload_config()
 
 
-def _run_scan(target_url: str, *, output: str = "text") -> None:
+def _save_report(content: str, *, prefix: str) -> Path:
+    reports_dir = Path(__file__).resolve().parents[2] / "data" / "reports"
+    reports_dir.mkdir(parents=True, exist_ok=True)
+    ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    out_path = reports_dir / f"{prefix}_{ts}.json"
+    out_path.write_text(content, encoding="utf-8")
+    return out_path
+
+
+def _load_payloads(payloads_file: Path | None, max_payloads: int | None) -> list[dict]:
+    if payloads_file is not None:
+        if not payloads_file.is_file():
+            raise typer.BadParameter(f"Payloads file not found: {payloads_file}")
+        with open(payloads_file, encoding="utf-8") as f:
+            payloads = json.load(f)
+    else:
+        payloads = load_payloads()
+    if max_payloads is not None:
+        payloads = payloads[:max_payloads]
+    return payloads
+
+
+def _run_scan(
+    target_url: str,
+    *,
+    output: str = "text",
+    payloads_file: Path | None = None,
+    max_payloads: int | None = None,
+    save_report: bool = False,
+    payload_field: str = "prompt",
+) -> None:
     _ensure_configured()
-    adapter = RestAPITarget(target_url)
+    payloads = _load_payloads(payloads_file, max_payloads)
+    adapter = RestAPITarget(target_url, json_key_prompt=payload_field)
     engine = RedTeamEngine(adapter)
-    report = engine.run_scan(verbose_console=(output != "json"))
+    report = engine.run_scan(payloads=payloads, verbose_console=(output != "json"))
     if output == "json":
         typer.echo(report.to_json())
+    if save_report:
+        out_path = _save_report(report.to_json(), prefix="scan_report")
+        if output != "json":
+            Console().print(f"[cyan]Report saved:[/cyan] {out_path}")
 
 
 def _run_agent_scan(
@@ -157,6 +196,10 @@ def scan_cmd(
     output: str = typer.Option(
         "text", "--output", help="Output format: for legacy URL scan or agent scan use text or json"
     ),
+    payloads_file: Path = typer.Option(None, "--payloads-file", help="Path to custom payloads JSON file (legacy mode)"),
+    max_payloads: int = typer.Option(None, "--max-payloads", min=1, help="Limit number of payloads to run (legacy mode)"),
+    save_report: bool = typer.Option(False, "--save-report", help="Save scan report to data/reports/ (legacy mode)"),
+    payload_field: str = typer.Option("prompt", "--payload-field", help="JSON field name for the prompt (legacy mode, e.g. 'message', 'prompt', 'input')"),
 ):
     """Run a PROMPTHEUS scan in legacy or agent mode."""
     if mode == "agent":
@@ -176,7 +219,14 @@ def scan_cmd(
 
     if target_url is None:
         raise typer.BadParameter("--target-url is required when --mode legacy is used")
-    _run_scan(target_url, output=output)
+    _run_scan(
+        target_url,
+        output=output,
+        payloads_file=payloads_file,
+        max_payloads=max_payloads,
+        save_report=save_report,
+        payload_field=payload_field,
+    )
 
 
 @app.command("pr-review")
@@ -208,6 +258,7 @@ def pr_review_cmd(
             scanner.pr_review(
                 path,
                 diff_context,
+                known_vulns_path=None,
                 severity_threshold=severity_threshold,
                 update_artifacts=True,
             )

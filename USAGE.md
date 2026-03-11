@@ -6,7 +6,7 @@
 
 **Có.** Bạn có thể chạy ngay sau khi cài dependency. Nếu **không set bất kỳ API key nào**, Judge sẽ dùng chế độ **Mock** (luôn trả "Safe") — dùng để test pipeline và giao diện.
 
-**Last verified:** 2026-03-10 ✅
+**Last verified:** 2026-03-11 ✅
 
 ---
 
@@ -19,27 +19,37 @@ cd /path/to/red-team-bot
 python3 -m venv .venv
 source .venv/bin/activate   # Windows: .venv\Scripts\activate
 
-# Cài dependency
+# Cài dependency (cách 1 — editable install, khuyến nghị)
+pip install -e ".[all]"
+
+# Hoặc cách 2
 pip install -r requirements.txt
 ```
 
 Kiểm tra CLI:
 
 ```bash
-python -m promptheus --help
+promptheus --help
 ```
 
 ### Sử dụng CLI:
 
 ```bash
-# Cách 1: Dùng subcommand (khuyến nghị)
+# Legacy scan — tấn công một URL target
 promptheus scan --target-url https://example.com/chat
+promptheus scan -u https://example.com/chat          # short flag
 
-# Cách 2: Dùng short flag
-promptheus scan -u https://example.com/chat
-
-# Cách 3: Agent mode (quét toàn bộ codebase)
+# Agent mode — quét toàn bộ codebase bằng AI
 promptheus scan --mode agent --target-path /path/to/repo
+
+# PR review — review diff/commit
+promptheus pr-review --path /path/to/repo --last 3
+
+# Setup wizard — cấu hình AI provider lần đầu
+promptheus init
+
+# Xem config hiện tại
+promptheus config show
 ```
 
 ---
@@ -93,11 +103,66 @@ promptheus scan --mode agent --target-path /path/to/large/repo \
 
 ---
 
-## 5. Chọn LLM cho Judge (đánh giá thật)
+## 5. Setup AI Provider cho Agent Mode
 
-Cần **một** trong các cách sau. Chỉ cần set biến môi trường trước khi chạy.
+Agent mode dùng Claude Agent SDK — yêu cầu **Anthropic API key** hoặc route qua **OpenRouter**.
 
-### 4.1. OpenAI
+### 5.1. Anthropic trực tiếp
+
+```bash
+export ANTHROPIC_API_KEY="sk-ant-xxxx"
+promptheus scan --mode agent --target-path .
+```
+
+### 5.2. OpenRouter (hỗ trợ nhiều provider, có free tier)
+
+Lấy API key tại https://openrouter.ai/keys rồi thêm vào `~/.zshrc`:
+
+```bash
+export OPENROUTER_API_KEY="sk-or-v1-xxxx"
+export ANTHROPIC_BASE_URL="https://openrouter.ai/api"
+export ANTHROPIC_AUTH_TOKEN="$OPENROUTER_API_KEY"
+export ANTHROPIC_API_KEY="placeholder"  # Bắt buộc, không để trống
+```
+
+```bash
+source ~/.zshrc
+promptheus scan --mode agent --target-path . --model sonnet
+```
+
+> **Lưu ý:** Agent mode chỉ hoạt động với **Claude models** (`haiku`, `sonnet`, `opus`). Không dùng được non-Claude models (Qwen, Llama...) cho agent mode.
+
+### 5.3. Chọn model cho agent mode
+
+```bash
+promptheus scan --mode agent --target-path . --model haiku   # Rẻ nhất, nhanh nhất
+promptheus scan --mode agent --target-path . --model sonnet  # Cân bằng (mặc định)
+promptheus scan --mode agent --target-path . --model opus    # Mạnh nhất, đắt nhất
+```
+
+### 5.4. Setup wizard (cách đơn giản nhất)
+
+Thay vì set env vars thủ công, dùng wizard:
+
+```bash
+promptheus init
+```
+
+Wizard hỏi chọn provider (OpenAI, Groq, Ollama, GLM, Custom) và lưu config vào file — không cần export env vars mỗi lần.
+
+Xem config đã lưu:
+
+```bash
+promptheus config show
+```
+
+---
+
+## 6. Chọn LLM cho Judge (legacy scan)
+
+Judge dùng cho legacy scan (`promptheus scan -u ...`). Cần **một** trong các cách sau.
+
+### 6.1. OpenAI
 
 ```bash
 export OPENAI_API_KEY=sk-proj-xxxx
@@ -105,7 +170,7 @@ export PROMPTHEUS_JUDGE_MODEL=gpt-4o-mini    # mặc định, có thể bỏ qua
 python -m promptheus scan -u https://your-api.com/chat
 ```
 
-### 4.2. GLM (Zhipu AI / 智谱)
+### 6.2. GLM (Zhipu AI / 智谱)
 
 API tương thích OpenAI. Lấy API key tại: https://open.bigmodel.cn/usercenter/apikeys
 
@@ -118,7 +183,7 @@ python -m promptheus scan -u https://your-api.com/chat
 
 Model thường dùng: `glm-4-flash`, `glm-4`, `glm-4-long`.
 
-### 4.3. Ollama (local, không cần key)
+### 6.3. Ollama (local, không cần key)
 
 ```bash
 # Trước đó: cài Ollama, chạy ollama pull llama3.2
@@ -127,7 +192,7 @@ export PROMPTHEUS_JUDGE_MODEL=llama3.2
 python -m promptheus scan -u https://your-api.com/chat
 ```
 
-### 4.4. Groq (free tier)
+### 6.4. Groq (free tier)
 
 ```bash
 export PROMPTHEUS_JUDGE_BASE_URL=https://api.groq.com/openai/v1
@@ -138,9 +203,9 @@ python -m promptheus scan -u https://your-api.com/chat
 
 ---
 
-## 6. Các cách chạy chính
+## 7. Các cách chạy chính
 
-### 6.1. CLI — Legacy REST API scan
+### 7.1. CLI — Legacy REST API scan
 
 Target API cần nhận POST JSON (mặc định key `prompt`) và trả về JSON có một trong các key: `reply`, `response`, `content`, `text`.
 
@@ -150,7 +215,7 @@ python -m promptheus scan -u https://your-api.com/chat
 python -m promptheus scan --target-url https://your-api.com/chat
 ```
 
-### 6.2. Dashboard (Streamlit)
+### 7.2. Dashboard (Streamlit)
 
 Giao diện web: nhập URL → bấm **Start Attack** → xem bảng kết quả (hàng Vulnerable màu đỏ).
 
@@ -160,7 +225,7 @@ streamlit run promptheus/interfaces/dashboard.py
 
 Mở trình duyệt theo địa chỉ in ra (thường `http://localhost:8501`). Cần set env Judge (OpenAI/GLM/Ollama/...) như mục 4 nếu muốn đánh giá thật; không set thì vẫn chạy với Mock.
 
-### 6.3. Agent Mode — Quét bảo mật codebase
+### 7.3. Agent Mode — Quét bảo mật codebase
 
 ```bash
 # Quét cơ bản
@@ -181,21 +246,23 @@ Kết quả được lưu tại `.promptheus/` trong target repository:
 - `scan_results.json` — Full report
 - `DAST_VALIDATION.json` — DAST results (nếu bật)
 
-### 6.4. PR Review — Review diff/branch
+### 7.4. PR Review — Review diff/branch
 
 ```bash
 # Review commit range
 promptheus pr-review --path /path/to/repo --range main..feature-branch
 
 # Review N commits gần nhất
-promptheus pr-review --path /path/to/repo --last 10
+promptheus pr-review --path /path/to/repo --last 1
 
 # Với severity filter
 promptheus pr-review --path /path/to/repo --range main..feature --severity medium
 
 # Output JSON
-promptheus pr-review --path /path/to/repo --last 5 --output json
+promptheus pr-review --path /path/to/repo --last 1 --output json
 ```
+
+> **Lưu ý:** Nếu diff quá lớn sẽ báo lỗi `exceeds safe analysis limits`. Giải pháp: dùng `--last 1` hoặc chia nhỏ range thay vì `--last 3` hay nhiều hơn.
 
 ### 6.5. Test với Local Adapter (không cần HTTP)
 
@@ -225,7 +292,7 @@ Chạy:
 python test_local.py
 ```
 
-### 6.6. Slack Bot (tùy chọn)
+### 7.6. Slack Bot (tùy chọn)
 
 Cần 2 Slack app (một victim bot, một RedTeamBot). Trong Slack gõ: **@RedTeamBot attack @TargetBot**.
 
@@ -238,9 +305,18 @@ python -m promptheus.interfaces.slack_bot
 
 ---
 
-## 7. Tóm tắt biến môi trường
+## 8. Tóm tắt biến môi trường
 
-### Judge (LLM)
+### Agent Mode (Anthropic / OpenRouter)
+
+| Biến | Ý nghĩa |
+|------|--------|
+| `ANTHROPIC_API_KEY` | Anthropic API key (trực tiếp) |
+| `ANTHROPIC_BASE_URL` | Base URL override (dùng khi route qua OpenRouter: `https://openrouter.ai/api`) |
+| `ANTHROPIC_AUTH_TOKEN` | Auth token thay thế khi dùng OpenRouter |
+| `OPENROUTER_API_KEY` | OpenRouter API key (set rồi trỏ `ANTHROPIC_AUTH_TOKEN` vào) |
+
+### Judge (LLM — legacy scan)
 
 | Biến | Ý nghĩa |
 |------|--------|
@@ -270,7 +346,7 @@ python -m promptheus.interfaces.slack_bot
 
 ---
 
-## 8. Payloads
+## 9. Payloads
 
 File `promptheus/core/attacks/payloads.json` chứa 3 payload mặc định:
 
@@ -282,7 +358,7 @@ Có thể sửa file này để thêm/bớt payload; mỗi item cần `id`, `nam
 
 ---
 
-## 9. Troubleshooting
+## 10. Troubleshooting
 
 ### Lỗi "bad interpreter" khi chạy pip
 
@@ -338,29 +414,68 @@ promptheus scan --mode agent --target-path /path/to/large/repo
 
 3. Kiểm tra kết quả partial trong `.promptheus/` — có thể một số agents đã hoàn thành.
 
+### PR review báo lỗi "exceeds safe analysis limits"?
+
+Diff quá lớn. Chia nhỏ range:
+
+```bash
+# Thay vì --last 3 (có thể chứa commit 130 files)
+promptheus pr-review --path . --last 1
+
+# Hoặc chỉ review 1 commit cụ thể
+promptheus pr-review --path . --range abc1234..def5678
+```
+
+### Lỗi model không tìm thấy khi dùng OpenRouter?
+
+Kiểm tra `ANTHROPIC_BASE_URL` đúng format (không có `/v1`):
+
+```bash
+echo $ANTHROPIC_BASE_URL
+# Phải ra: https://openrouter.ai/api
+
+# Nếu sai, sửa lại trong ~/.zshrc
+export ANTHROPIC_BASE_URL="https://openrouter.ai/api"  # Không có /v1
+export ANTHROPIC_API_KEY="placeholder"                  # Không để trống
+source ~/.zshrc
+```
+
 ---
 
-## 10. Quick Start Commands
+## 11. Quick Start Commands
 
 ```bash
 # 1. Setup
-source .venv/bin/activate
+python3 -m venv .venv && source .venv/bin/activate
+pip install -e ".[all]"
 
-# 2. Test với Mock Judge (không cần API key)
+# 2. Lần đầu: chạy wizard chọn AI provider
+promptheus init
+
+# 3. Xem config
+promptheus config show
+
+# 4. Test legacy scan (không cần API key)
 promptheus scan -u https://httpbin.org/post
 
-# 3. Agent mode — quét codebase
-promptheus scan --mode agent --target-path ./my-project
+# 5. Agent mode — quét codebase
+promptheus scan --mode agent --target-path . --model haiku
 
-# 4. PR review
-promptheus pr-review --path /path/to/repo --last 5
+# 6. PR review — 1 commit gần nhất
+promptheus pr-review --path . --last 1
 
-# 5. Chạy Dashboard
+# 7. Xem kết quả scan
+cat .promptheus/scan_results.json | python3 -c "
+import json, sys
+data = json.load(sys.stdin)
+s = data.get('summary', {})
+print(f\"CRITICAL: {s.get('critical',0)} | HIGH: {s.get('high',0)} | MEDIUM: {s.get('medium',0)}\")
+for i in data.get('issues', []):
+    print(f\"[{i.get('severity','?').upper():8}] {i.get('title','')}\")
+"
+
+# 8. Chạy Dashboard
 streamlit run apps/dashboard/main.py
-
-# 6. Với LLM Judge (ví dụ OpenAI)
-export OPENAI_API_KEY=sk-xxx
-promptheus scan --mode agent --target-path ./my-project
 ```
 
 ### Desktop App

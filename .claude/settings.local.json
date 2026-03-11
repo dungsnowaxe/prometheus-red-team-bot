@@ -1,7 +1,10 @@
 {
   "permissions": {
     "allow": [
-      "Bash(openspec)"
+      "Bash(openspec)",
+      "Bash(python -m promptheus --help 2>&1 | head -30)",
+      "Bash(python3 -m promptheus --help 2>&1)",
+      "Bash(.venv/bin/pip install:*)"
     ]
   }
 }
