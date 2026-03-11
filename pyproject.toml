@@ -52,3 +52,15 @@ path = "promptheus/__init__.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["promptheus", "apps"]
+exclude = [
+    "**/node_modules",
+    "**/node_modules/**",
+]
+
+[tool.hatch.build.targets.sdist]
+exclude = [
+    "**/node_modules",
+    "**/node_modules/**",
+    ".git",
+    "dist",
+]
