@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "promptheus"
+name = "promptheus-ai"
 dynamic = ["version"]
 description = "Proactive Red-team Operator for Model PenTesting & Heuristic Exploit Utility System"
 readme = "README.md"

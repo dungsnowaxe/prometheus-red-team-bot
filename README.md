@@ -183,6 +183,12 @@ pytest
 
 ---
 
+## Inspiration
+
+PROMPTHEUS was inspired by [SecureVibes](https://github.com/anshumanbh/securevibes) by [Anshuman Bhartiya](https://github.com/anshumanbh) — an AI-powered security scanner that pioneered the multi-agent approach to codebase vulnerability scanning. Thanks for lighting the way.
+
+---
+
 ## License
 
 [MIT](LICENSE) — free to use, modify, and distribute.
