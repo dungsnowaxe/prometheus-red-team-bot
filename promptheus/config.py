@@ -290,14 +290,11 @@ class RuntimeConfig:
         raw = os.getenv("PROMPTHEUS_SCAN_TIMEOUT_SECONDS")
         if raw is None:
             return self.DEFAULTS["scan_timeout_seconds"]
-        # Check for explicit "0" to disable timeout
-        if raw.strip() == "0":
-            return None
         try:
             value = int(raw)
         except ValueError:
             return self.DEFAULTS["scan_timeout_seconds"]
-        # Return None for 0, otherwise return the value (must be non-negative)
+        # Return None for 0 (disabled), otherwise return positive values or default
         return None if value == 0 else (value if value > 0 else self.DEFAULTS["scan_timeout_seconds"])
 
 

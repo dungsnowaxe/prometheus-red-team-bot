@@ -10,6 +10,9 @@ const isPackaged = app.isPackaged;
 const platform = process.platform;
 const isWindows = platform === 'win32';
 
+// Event type constants for output streaming
+export const OUTPUT_EVENTS = { STDOUT: 'stdout', STDERR: 'stderr' };
+
 /**
  * Get the path to the Promptheus CLI executable.
  * @param {string | undefined} override - User override from store (or undefined to use default)
@@ -26,6 +29,22 @@ export function getCliPath(override) {
     return path.join(resourcesPath, 'resources', 'bin', binName);
   }
   return 'promptheus';
+}
+
+/**
+ * Parse stdout JSON and extract results.
+ * @param {string} stdout - Raw stdout string
+ * @param {(parsed: object) => Array | undefined} parseStdout - Optional custom parser
+ * @returns {Array | undefined} Parsed results or undefined
+ */
+function parseStdoutOutput(stdout, parseStdout) {
+  if (!stdout.trim()) return undefined;
+  try {
+    const parsed = JSON.parse(stdout);
+    return parseStdout ? parseStdout(parsed) : parsed.results ?? parsed.issues;
+  } catch {
+    return undefined;
+  }
 }
 
 /**
@@ -50,12 +69,12 @@ function runCliSubprocess(cliPath, args, onOutput, parseStdout) {
     child.stdout?.on('data', (data) => {
       const s = data.toString();
       stdout += s;
-      onOutput?.('stdout', s);
+      onOutput?.(OUTPUT_EVENTS.STDOUT, s);
     });
     child.stderr?.on('data', (data) => {
       const s = data.toString();
       stderr += s;
-      onOutput?.('stderr', s);
+      onOutput?.(OUTPUT_EVENTS.STDERR, s);
     });
 
     child.on('error', (err) => {
@@ -69,22 +88,7 @@ function runCliSubprocess(cliPath, args, onOutput, parseStdout) {
 
     child.on('close', (code, signal) => {
       const exitCode = code ?? (signal ? -1 : 0);
-      let results;
-      if (exitCode === 0 && stdout.trim() && parseStdout) {
-        try {
-          const parsed = JSON.parse(stdout);
-          results = parseStdout(parsed);
-        } catch {
-          results = undefined;
-        }
-      } else if (exitCode === 0 && stdout.trim()) {
-        try {
-          const parsed = JSON.parse(stdout);
-          results = parseStdout ? parseStdout(parsed) : parsed.results ?? parsed.issues;
-        } catch {
-          results = undefined;
-        }
-      }
+      const results = exitCode === 0 ? parseStdoutOutput(stdout, parseStdout) : undefined;
       resolve({
         code: exitCode,
         stdout,

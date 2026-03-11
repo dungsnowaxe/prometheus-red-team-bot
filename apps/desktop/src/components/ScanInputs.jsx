@@ -133,28 +133,12 @@ function PrReviewInputs({
   );
 }
 
-export function ScanInputs({ mode, disabled, ...props }) {
+export function ScanInputs({ mode, disabled, urlScan, agentScan, prReview }) {
   if (mode === "url") {
-    return <UrlScanInputs disabled={disabled} targetUrl={props.targetUrl} setTargetUrl={props.setTargetUrl} />;
+    return <UrlScanInputs disabled={disabled} {...urlScan} />;
   }
   if (mode === "agent") {
-    return (
-      <AgentScanInputs
-        disabled={disabled}
-        agentPath={props.agentPath} setAgentPath={props.setAgentPath}
-        agentModel={props.agentModel} setAgentModel={props.setAgentModel}
-        agentDast={props.agentDast} setAgentDast={props.setAgentDast}
-        agentDastUrl={props.agentDastUrl} setAgentDastUrl={props.setAgentDastUrl}
-        agentConfirmLarge={props.agentConfirmLarge} setAgentConfirmLarge={props.setAgentConfirmLarge}
-      />
-    );
+    return <AgentScanInputs disabled={disabled} {...agentScan} />;
   }
-  return (
-    <PrReviewInputs
-      disabled={disabled}
-      prPath={props.prPath} setPrPath={props.setPrPath}
-      prRange={props.prRange} setPrRange={props.setPrRange}
-      prLastN={props.prLastN} setPrLastN={props.setPrLastN}
-    />
-  );
+  return <PrReviewInputs disabled={disabled} {...prReview} />;
 }

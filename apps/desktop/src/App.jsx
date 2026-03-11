@@ -42,10 +42,16 @@ function App() {
 
   useEffect(() => {
     if (!window.electronAPI?.onScanOutput) return;
-    window.electronAPI.onScanOutput(({ event, data }) => {
+    const handler = ({ event, data }) => {
       if (!scanActive) return;
       if (event === "stdout" || event === "stderr") setCombinedLog((prev) => prev + data);
-    });
+    };
+    window.electronAPI.onScanOutput(handler);
+    // Note: electronAPI.onScanOutput doesn't provide unsubscribe mechanism
+    // We rely on scanActive flag to prevent processing stale events
+    return () => {
+      // Cleanup placeholder - actual listener cleanup handled by scanActive flag
+    };
   }, [scanActive]);
 
   const saveCliPathOverride = (value) => {
@@ -159,15 +165,15 @@ function App() {
             <ScanInputs
               mode={mode}
               disabled={running}
-              targetUrl={targetUrl} setTargetUrl={setTargetUrl}
-              agentPath={agentPath} setAgentPath={setAgentPath}
-              agentModel={agentModel} setAgentModel={setAgentModel}
-              agentDast={agentDast} setAgentDast={setAgentDast}
-              agentDastUrl={agentDastUrl} setAgentDastUrl={setAgentDastUrl}
-              agentConfirmLarge={agentConfirmLarge} setAgentConfirmLarge={setAgentConfirmLarge}
-              prPath={prPath} setPrPath={setPrPath}
-              prRange={prRange} setPrRange={setPrRange}
-              prLastN={prLastN} setPrLastN={setPrLastN}
+              urlScan={{ targetUrl, setTargetUrl }}
+              agentScan={{
+                agentPath, setAgentPath,
+                agentModel, setAgentModel,
+                agentDast, setAgentDast,
+                agentDastUrl, setAgentDastUrl,
+                agentConfirmLarge, setAgentConfirmLarge,
+              }}
+              prReview={{ prPath, setPrPath, prRange, setPrRange, prLastN, setPrLastN }}
             />
           </div>
 
