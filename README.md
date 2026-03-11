@@ -6,7 +6,7 @@
 
 *Steals fire from the gods. LLM red-team security auditing.*
 
-[![PyPI version](https://img.shields.io/pypi/v/promptheus.svg)](https://pypi.org/project/promptheus/)
+[![PyPI version](https://img.shields.io/pypi/v/promptheus-ai.svg)](https://pypi.org/project/promptheus-ai/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![CI](https://github.com/dungsnowaxe/prometheus-red-team-bot/actions/workflows/release.yml/badge.svg)](https://github.com/dungsnowaxe/prometheus-red-team-bot/actions)
@@ -26,13 +26,13 @@ AI agents are being given more power every day — calling tools, reading files,
 ### Option A — pip (requires Python 3.10+)
 
 ```bash
-pip install promptheus
+pip install promptheus-ai
 promptheus init   # first-run setup wizard
 ```
 
 To upgrade later:
 ```bash
-pip install --upgrade promptheus
+pip install --upgrade promptheus-ai
 ```
 
 ### Option B — Binary download (no Python required)
@@ -156,16 +156,37 @@ No lock-in — works with any OpenAI-compatible endpoint:
 | **GLM / Zhipu AI** | Alternative provider |
 | **Custom** | Any OpenAI-compatible endpoint |
 
+See [docs/ai-providers.md](docs/ai-providers.md) for full setup instructions per provider.
+
 ---
 
-## Other interfaces
+## Interfaces
 
-| Interface | How to run |
-|-----------|-----------|
-| **Desktop App** | Download from [Releases](https://github.com/dungsnowaxe/prometheus-red-team-bot/releases) — bundled CLI, no Python needed |
-| **Streamlit Dashboard** | `streamlit run apps/dashboard/main.py` |
-| **REST API** | `uvicorn apps.api.main:app` |
-| **Slack Bot** | See [Slack Bot setup](apps/slack_bot/README.md) |
+PROMPTHEUS ships across multiple surfaces — pick what fits your workflow:
+
+| Interface | Description | Guide |
+|-----------|-------------|-------|
+| **CLI** | Full-featured terminal tool | [apps/cli/README.md](apps/cli/README.md) |
+| **Desktop App** | Native app (macOS/Windows/Linux), bundled CLI, no Python needed | [apps/desktop/README.md](apps/desktop/README.md) · [Download](https://github.com/dungsnowaxe/prometheus-red-team-bot/releases) |
+| **Web Dashboard** | Streamlit UI — enter URL, run scan, view results visually | [apps/dashboard/README.md](apps/dashboard/README.md) |
+| **REST API** | FastAPI server for programmatic access | [apps/api/README.md](apps/api/README.md) |
+| **Slack Bot** | `@RedTeamBot attack @TargetBot` — scan directly in Slack | [apps/slack_bot/README.md](apps/slack_bot/README.md) |
+
+---
+
+## Documentation
+
+| Doc | Description |
+|-----|-------------|
+| [Architecture](docs/architecture.md) | How PROMPTHEUS uses Claude Agent SDK — agent pipeline, orchestration, data flow |
+| [Scanner Config](docs/scanner_config.md) | Cost limits, threat-aware scanning, design decisions, artifact trust |
+| [AI Providers](docs/ai-providers.md) | Setup guide for Claude, OpenAI, Groq, Ollama, OpenRouter, GLM |
+| [DAST Guide](docs/DAST_GUIDE.md) | Dynamic Application Security Testing — how it works and how to enable it |
+| [PR Review Pipeline](docs/architecture-pr-review-pipeline.md) | Architecture of the PR/commit review flow |
+| [Maintenance Guide](docs/MAINTENANCE.md) | Dead code detection, pruning strategy, test coverage |
+| [Timeout Configuration](docs/timeout_configuration.md) | Agent scan timeout settings and troubleshooting |
+| [Streaming Mode](docs/STREAMING_MODE.md) | Real-time output streaming for agent scans |
+| [Example Reports](docs/example-reports/) | Sample scan outputs across different models and targets |
 
 ---
 
