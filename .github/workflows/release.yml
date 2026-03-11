@@ -79,6 +79,11 @@ jobs:
         with:
           path: artifacts/
 
+      - name: Rename binaries to platform-specific names
+        run: |
+          mv artifacts/promptheus-macos/promptheus artifacts/promptheus-macos/promptheus-macos
+          mv artifacts/promptheus-linux/promptheus artifacts/promptheus-linux/promptheus-linux
+
       - name: Extract changelog for this version
         id: changelog
         run: |
@@ -93,6 +98,6 @@ jobs:
         with:
           body: ${{ steps.changelog.outputs.notes }}
           files: |
-            artifacts/promptheus-macos/promptheus
-            artifacts/promptheus-linux/promptheus
+            artifacts/promptheus-macos/promptheus-macos
+            artifacts/promptheus-linux/promptheus-linux
             artifacts/promptheus-windows.exe/promptheus.exe
