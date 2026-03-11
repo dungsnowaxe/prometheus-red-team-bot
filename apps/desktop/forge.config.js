@@ -6,16 +6,15 @@ module.exports = {
   packagerConfig: {
     asar: true,
     extraResource: [path.join(__dirname, 'resources')],
-    osxSign: {
-      // Ad-hoc signing for development (use "-" for ad-hoc, or remove osxSign entirely)
-      // For distribution: Get Apple Developer certificate and set identity to null for auto-discover
-      identity: process.env.APPLE_SIGN_IDENTITY || '-', // "-" = ad-hoc, null = auto-discover from keychain
-      'hardened-runtime': true,
-      entitlements: 'entitlements.plist',
-      'entitlements-inherit': 'entitlements.plist',
-      'signature-flags': ['library'],
-    },
-    // Skip notarization for ad-hoc builds
+    ...(process.env.APPLE_SIGN_IDENTITY ? {
+      osxSign: {
+        identity: process.env.APPLE_SIGN_IDENTITY,
+        'hardened-runtime': true,
+        entitlements: path.join(__dirname, 'entitlements.plist'),
+        'entitlements-inherit': path.join(__dirname, 'entitlements.plist'),
+        'signature-flags': ['library'],
+      },
+    } : {}),
     ...((process.env.APPLE_ID && process.env.APPLE_ID_PASSWORD && process.env.APPLE_TEAM_ID) ? {
       osxNotarize: {
         appleId: process.env.APPLE_ID,

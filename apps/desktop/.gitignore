@@ -94,3 +94,4 @@ out/
 # Bundled CLI (built by scripts/build-cli.js)
 resources/bin/
 build-cli/
+.env.local
